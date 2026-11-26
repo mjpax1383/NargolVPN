@@ -12,6 +12,9 @@
 
 * { box-sizing: border-box; }
 
+/* [hidden] must win over the display rules below, otherwise a hidden card still renders. */
+[hidden] { display: none !important; }
+
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
 
 body {
@@ -53,7 +56,7 @@ header.wrap { padding-top: 44px; }
 .stat b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
 .stat span { color: var(--muted); font-size: 12px; }
 
-.subs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 22px; }
+.subs { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-bottom: 22px; }
 
 .sub {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;

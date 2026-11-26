@@ -159,6 +159,8 @@ async function apiPublish(env, body, url) {
   const base = publicBase(env, origin);
   const subs = body.subs || {};
   const counts = body.counts || {};
+  // 0 when no vantage point inside Iran has run yet: the mirror is then hidden rather than empty.
+  const irCount = Number(counts.ir || (subs.ir && subs.ir.count) || 0);
 
   for (const name of ["ir", "global", "all"]) {
     const sub = subs[name];
@@ -181,10 +183,13 @@ async function apiPublish(env, body, url) {
       buildDigest({
         stats: body.stats || {},
         best: body.best || [],
-        subs: { global: subUrl(env, origin, "global"), ir: subUrl(env, origin, "ir") },
+        subs: {
+          global: subUrl(env, origin, "global"),
+          ir: irCount > 0 ? subUrl(env, origin, "ir") : "",
+        },
         generated_at: now,
       });
-    const sent = await sendTelegram(env, html, replyMarkup(env, origin));
+    const sent = await sendTelegram(env, html, replyMarkup(env, origin, irCount));
     if (sent.ok) {
       await setMeta(env, "last_post", String(now));
       telegram = { posted: true, message_id: sent.message_id };

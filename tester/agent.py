@@ -260,10 +260,12 @@ def publish(wc: WorkerClient, stats: dict, dry_run: bool) -> dict:
     stats = dict(stats)
     stats["ir"] = len(ir_sel)
     stats["alive"] = len(global_sel)
+    # Only advertise the Iranian mirror once a vantage point inside Iran has fed it.
+    ir_url = base + "/sub/ir" if ir_sel else ""
     digest = scoring.build_digest(
         stats,
         global_sel,
-        {"global_url": base + "/sub/global", "ir_url": base + "/sub/ir"},
+        {"global_url": base + "/sub/global", "ir_url": ir_url},
         time.time(),
     )
     payload = {

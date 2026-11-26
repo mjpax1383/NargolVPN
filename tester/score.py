@@ -45,13 +45,19 @@ def select(items: list, limit: int, predicate) -> list:
 def build_digest(stats: dict, best: list, subs: dict, generated_at: float) -> str:
     fmt = lambda value: "{:,}".format(int(value or 0))
     stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(generated_at))
+    ir_url = str(subs.get("ir_url") or "").strip()
+    ir_count = int(stats.get("ir") or 0)
+    head = "🧪 تست‌شده: " + fmt(stats.get("tested")) + " · ✅ سالم: " + fmt(stats.get("alive"))
+    if ir_url:
+        head += " · 🇮🇷 سازگار با ایران: " + fmt(ir_count)
     lines = [
         "🔄 <b>بروزرسانی ساعتی کانفیگ‌ها</b>",
         "",
-        "🧪 تست‌شده: " + fmt(stats.get("tested")) + " · ✅ سالم: " + fmt(stats.get("alive")) + " · 🇮🇷 سازگار با ایران: " + fmt(stats.get("ir")),
+        head,
         "🌍 ساب جهانی: <code>" + subs.get("global_url", "") + "</code>",
-        "🇮🇷 ساب ایران: <code>" + subs.get("ir_url", "") + "</code>",
     ]
+    if ir_url:
+        lines.append("🇮🇷 ساب ایران: <code>" + ir_url + "</code>")
     if best:
         lines.append("")
         lines.append("<b>🏆 سریع‌ترین‌ها</b>")

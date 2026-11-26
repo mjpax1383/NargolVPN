@@ -33,7 +33,8 @@ T+00:05  GitHub Actions شروع می‌شود
 T+00:20  Worker: upsert در D1، آپدیت subs، ارسال پیام (با cooldown)،
         کامیت subs/*.txt در ریپوی گیت‌هاب
 
-هر ۴۵ دقیقه  دستگاه ایران → GET /api/claim?vantage=ir → تست → POST /api/ingest
+اختیاری: هر ۴۵ دقیقه  دستگاه داخل ایران → GET /api/claim?vantage=ir → تست → POST /api/ingest
+اگر چنین دستگاهی نباشد، ستون ir خالی می‌ماند و دکمهٔ ساب ایران در تلگرام و سایت ساخته نمی‌شود.
 ```
 
 ## ۳. احراز هویت (HMAC)

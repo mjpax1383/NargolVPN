@@ -47,6 +47,15 @@
       $("meta").textContent = "آخرین بروزرسانی " + minutes + " دقیقه پیش · " + items.length + " کانفیگ زنده";
     }
 
+    // Without a vantage point inside Iran the mirror would be an empty file: hide it instead.
+    const hasIr = Number(irCount) > 0;
+    const irButton = document.querySelector(".sub[data-copy=\"__IR__\"]");
+    if (irButton) irButton.hidden = !hasIr;
+    const irToggle = $("only-ir");
+    if (irToggle && irToggle.closest("label")) irToggle.closest("label").hidden = !hasIr;
+    const irStat = $("stat-ir");
+    if (irStat && irStat.closest(".stat")) irStat.closest(".stat").hidden = !hasIr;
+
     const base = (state.info && state.info.base) || apiBase;
     document.querySelectorAll(".sub").forEach((button) => {
       const key = button.dataset.copy;

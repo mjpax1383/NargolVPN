@@ -21,10 +21,10 @@ export function subUrl(env, origin, name) {
   return publicBase(env, origin) + "/sub/" + name;
 }
 
-export function replyMarkup(env, origin) {
-  const rows = [
-    [{ text: "🌍 ساب جهانی", url: subUrl(env, origin, "global") }, { text: "🇮🇷 ساب ایران", url: subUrl(env, origin, "ir") }],
-  ];
+export function replyMarkup(env, origin, irCount) {
+  const rows = [[{ text: "🌍 ساب جهانی", url: subUrl(env, origin, "global") }]];
+  // The Iranian mirror only exists once a vantage point inside Iran has run.
+  if (Number(irCount) > 0) rows[0].push({ text: "🇮🇷 ساب ایران", url: subUrl(env, origin, "ir") });
   const site = (env.SITE_URL || "").trim();
   if (site) rows.push([{ text: "📊 لیست زنده و وضعیت", url: site }]);
   return { inline_keyboard: rows };
@@ -139,7 +139,7 @@ export function buildDigest(input) {
   lines.push("");
   lines.push("🧪 تست‌شده: " + fmt(stats.tested) + " · ✅ سالم: " + fmt(stats.alive) + " · 🇮🇷 سازگار با ایران: " + fmt(stats.ir));
   if (subs.global) lines.push("🌍 ساب جهانی: <code>" + subs.global + "</code>");
-  if (subs.ir) lines.push("🇮🇷 ساب ایران: <code>" + subs.ir + "</code>");
+  if (subs.ir && Number(stats.ir) > 0) lines.push("🇮🇷 ساب ایران: <code>" + subs.ir + "</code>");
   lines.push("");
   if (best.length) {
     lines.push("<b>🏆 سریع‌ترین‌ها</b>");
