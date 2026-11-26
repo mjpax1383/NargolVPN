@@ -133,27 +133,26 @@ export async function dispatchWorkflow(env) {
 export async function pushSubsToGithub(env, subs) {
   const stamp = new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC";
   const results = {};
-  const numbered = Object.keys(subs || {})
-    .filter((name) => /^(all|global|ir)\d+$/.test(name) && subs[name] && typeof subs[name].body === "string")
-    .sort();
-  for (const name of numbered) {
-    results[name] = await commitFile(
+  // One mirror file per family, holding every chunk in order: fewer commits than
+  // one file per chunk, and the repo alone can still rebuild a subscription.
+  for (const family of ["all", "global", "ir"]) {
+    const chunks = Object.keys(subs || {})
+      .filter((name) => new RegExp("^" + family + "\\d+$").test(name))
+      .sort((a, b) => Number(a.slice(family.length)) - Number(b.slice(family.length)));
+    if (!chunks.length) continue;
+    const plain = chunks
+      .map((name) => String((subs[name] && subs[name].plain) || ""))
+      .join("\n")
+      .split("\n")
+      .filter(Boolean)
+      .join("\n");
+    if (!plain) continue;
+    results[family] = await commitFile(
       env,
-      "subs/" + name + ".txt",
-      subs[name].body,
-      "subs(" + name + "): " + (subs[name].count || 0) + " configs @ " + stamp,
+      "subs/" + family + ".txt",
+      b64encodeUtf8(plain),
+      "subs(" + family + "): " + plain.split("\n").filter(Boolean).length + " configs in " + chunks.length + " chunks @ " + stamp,
     );
-  }
-  // One flat archive of every published config, so the repo alone can rebuild a sub.
-  const archive = numbered
-    .filter((name) => name.indexOf("all") === 0)
-    .map((name) => String(subs[name].plain || ""))
-    .join("\n")
-    .split("\n")
-    .filter(Boolean)
-    .join("\n");
-  if (archive) {
-    results["all.txt"] = await commitFile(env, "subs/all.txt", archive, "subs(all): archive @ " + stamp);
   }
   return results;
 }
