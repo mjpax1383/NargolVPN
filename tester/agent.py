@@ -47,9 +47,23 @@ class WorkerClient:
     """HMAC-signed client for the Cloudflare Worker."""
 
     def __init__(self, base: str, secret: str, timeout: float = 40.0) -> None:
-        self.base = (base or "").rstrip("/")
-        self.secret = secret or ""
+        cleaned = (base or "").strip().rstrip("/")
+        # A bare host makes urllib fail with a cryptic "unknown url type"; be forgiving.
+        if cleaned and "://" not in cleaned:
+            cleaned = "https://" + cleaned
+        self.base = cleaned
+        self.secret = (secret or "").strip()
         self.timeout = timeout
+        if not self.base:
+            raise SystemExit(
+                "WORKER_URL is empty. Set the repository secret WORKER_URL to "
+                "https://<your-worker>.workers.dev"
+            )
+        if not self.secret:
+            raise SystemExit(
+                "TESTER_SECRET is empty. Set the repository secret TESTER_SECRET to the "
+                "same 64-character key you uploaded with wrangler secret put."
+            )
 
     def _headers(self, body: bytes) -> dict:
         stamp = str(int(time.time()))

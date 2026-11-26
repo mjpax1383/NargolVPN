@@ -14,7 +14,7 @@ binding = "DB"
 database_name = "vpnbot"
 # Replace with the id printed by `wrangler d1 create vpnbot`. The zero id below only
 # exists so `wrangler dev --local` works before you own a database.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "81b1d182-c39d-4ebe-93c3-bc685f57a9f4"
 migrations_dir = "migrations"
 
 [observability]
@@ -27,7 +27,7 @@ POST_COOLDOWN_MIN = "55"
 STATE_TTL_MIN = "240"
 MAX_RESULTS_PER_INGEST = "200"
 MAX_IR_CLAIM = "120"
-GITHUB_REPO = "YOUR_GH_USER/YOUR_REPO"
+GITHUB_REPO = "mjpax1383/NargolVPN"
 GITHUB_BRANCH = "main"
 SUB_PATH = "subs/all.txt"
 PUBLIC_BASE = ""
