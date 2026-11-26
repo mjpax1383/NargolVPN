@@ -272,9 +272,10 @@ def publish(wc: WorkerClient, stats: dict, dry_run: bool) -> dict:
     info = wc.get("/api/info", signed=False)
     base = (info.get("base") or wc.base).rstrip("/")
     items = build_items(wc)
+    # Caps keep the publish payload small enough for the Worker free plan (10ms CPU).
     global_sel = scoring.select(items, 200, lambda item: item["works_global"])
     ir_sel = scoring.select(items, 120, lambda item: item["works_ir"])
-    all_sel = scoring.select(items, 260, lambda item: True)
+    all_sel = scoring.select(items, 200, lambda item: True)
 
     # One lookup per unique host, only for configs that are actually published.
     hosts = [item.get("host") for item in all_sel + ir_sel + global_sel]
