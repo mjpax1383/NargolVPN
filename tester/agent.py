@@ -38,6 +38,12 @@ from uri import Config, parse_uri  # noqa: E402
 VERSION = "1.0.0"
 # Subscription split: more than this many configs per family opens /sub/global2, ...
 CHUNK_SIZE = 50
+# Selection looks at this many extra configs per family so the protocol mix and the
+# country spread have room to pick from.
+POOL_FACTOR = 2.5
+# Share of the hourly new-test slots reserved for the preferred protocols.
+FRESH_PREFERRED_SHARE = 0.75
+PREFERRED_PROTOS = ("vless", "vmess")
 RUN_ID = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + str(random.randint(1000, 9999))
 
 
@@ -181,8 +187,27 @@ def pick_candidates(found: dict, alive_rows: list, seen: dict, max_new: int, max
     retest.sort(key=lambda pair: pair[0])
     fresh = [cfg for cfg_id, cfg in found.items() if cfg_id not in known]
     random.shuffle(fresh)
-    ordered = [cfg for _, cfg in retest[:max_retest]] + fresh[:max_new]
+    ordered = [cfg for _, cfg in retest[:max_retest]] + pick_fresh(fresh, max_new)
     return ordered, len(fresh)
+
+
+def pick_fresh(fresh: list, max_new: int) -> list:
+    """Reserve most new-test slots for vless/vmess, the protocols clients like best.
+
+    Public feeds are full of Shadowsocks, so uniform sampling would keep the alive
+    pool mostly ss. The leftover slots stay random, and when one side runs out the
+    other fills in, so nothing is wasted.
+    """
+    if not fresh or max_new <= 0:
+        return []
+    quota = int(max_new * FRESH_PREFERRED_SHARE)
+    preferred = [cfg for cfg in fresh if str(getattr(cfg, "proto", "")).lower() in PREFERRED_PROTOS]
+    others = [cfg for cfg in fresh if str(getattr(cfg, "proto", "")).lower() not in PREFERRED_PROTOS]
+    random.shuffle(preferred)
+    head = preferred[:quota]
+    tail = preferred[quota:] + others
+    random.shuffle(tail)
+    return head + tail[: max(0, max_new - len(head))]
 
 
 def run_tests(configs: list, xray_bin: str, workers: int, timeout: float, tries: int, max_seconds: float) -> dict:
@@ -273,17 +298,33 @@ def publish(wc: WorkerClient, stats: dict, dry_run: bool) -> dict:
     base = (info.get("base") or wc.base).rstrip("/")
     items = build_items(wc)
     # Caps keep the publish payload small enough for the Worker free plan (10ms CPU).
-    global_sel = scoring.select(items, 200, lambda item: item["works_global"])
-    ir_sel = scoring.select(items, 120, lambda item: item["works_ir"])
-    all_sel = scoring.select(items, 200, lambda item: True)
-
-    # One lookup per unique host, only for configs that are actually published.
-    hosts = [item.get("host") for item in all_sel + ir_sel + global_sel]
+    wanted = (
+        ("global", 200, lambda item: item["works_global"]),
+        ("ir", 120, lambda item: item["works_ir"]),
+        ("all", 200, lambda item: True),
+    )
+    # A wider pool first: the mix/country pass needs spare configs to choose from.
+    pools = {name: scoring.select(items, int(limit * POOL_FACTOR), predicate) for name, limit, predicate in wanted}
+    hosts = []
+    for pool in pools.values():
+        hosts.extend(item.get("host") for item in pool if item.get("host"))
     try:
         codes = geo_mod.countries_for(hosts) if hosts else {}
     except Exception as error:  # noqa: BLE001
         log("geo lookup failed, publishing without flags: " + str(error)[:80])
         codes = {}
+    picks = {}
+    for name, limit, _ in wanted:
+        picks[name] = scoring.diversify(pools[name], limit, codes)
+        # Never hand out a short subscription: relax the mix caps first, then drop
+        # them entirely when the pool really has nothing else to offer.
+        if len(picks[name]) < int(limit * 0.6):
+            picks[name] = scoring.diversify(pools[name], limit, codes, share=scoring.PROTO_SHARE_RELAXED)
+        if len(picks[name]) < int(limit * 0.4):
+            picks[name] = scoring.diversify(pools[name], limit, codes, share={})
+    global_sel = picks["global"]
+    ir_sel = picks["ir"]
+    all_sel = picks["all"]
 
     def tagged(selection):
         out = []
@@ -306,6 +347,8 @@ def publish(wc: WorkerClient, stats: dict, dry_run: bool) -> dict:
     stats = dict(stats)
     stats["ir"] = len(ir_sel)
     stats["alive"] = len(global_sel)
+    stats["protos"] = scoring.protocol_mix(global_sel)
+    stats["countries"] = len({codes[host] for host in (str(item.get("host") or "").lower() for item in global_sel) if codes.get(host)})
     # Only advertise the Iranian mirror once a vantage point inside Iran has fed it.
     ir_urls = [base + "/sub/ir" + str(n) for n in range(1, families["ir"] + 1)] if ir_sel else []
     global_urls = [base + "/sub/global" + str(n) for n in range(1, families["global"] + 1)]

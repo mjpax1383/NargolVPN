@@ -79,21 +79,18 @@ def flag(code: str) -> str:
     return chr(0x1F1E6 + ord(code[0]) - 65) + chr(0x1F1E6 + ord(code[1]) - 65)
 
 
-def countries_for(hosts, workers: int = 8, timeout: float = 5.0) -> dict:
-    """Map host -> ISO code for the given hosts (deduplicated, parallel, never raises)."""
+def countries_for(hosts, workers: int = 16, timeout: float = 4.0) -> dict:
+    """Map host -> ISO code for the given hosts (deduplicated, parallel, never raises).
+
+    Resolution and lookup are split so a hostname is resolved once and an address is
+    queried once: a family of 600 configs usually shares a few hundred addresses.
+    """
     wanted = sorted({str(h or "").strip().lower() for h in hosts if str(h or "").strip()})
     if not wanted:
         return {}
-
-    def one(host: str) -> tuple:
-        ip = resolve(host)
-        return host, (country_of_ip(ip, timeout) if ip else "")
-
-    out = {}
-    pool = ThreadPoolExecutor(max_workers=max(1, workers))
-    try:
-        for host, code in pool.map(one, wanted):
-            out[host] = code
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
-    return out
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        resolved = dict(zip(wanted, pool.map(resolve, wanted)))
+    addresses = sorted({ip for ip in resolved.values() if ip})
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        looked_up = dict(zip(addresses, pool.map(lambda ip: country_of_ip(ip, timeout), addresses)))
+    return {host: looked_up.get(ip, "") for host, ip in resolved.items()}

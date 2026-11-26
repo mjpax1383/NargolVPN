@@ -62,6 +62,61 @@ def select(items: list, limit: int, predicate) -> list:
     return out
 
 
+# Share of a family each low-priority protocol may take. vless/vmess have no cap:
+# they are the protocols most clients handle best, so they fill the list first.
+PROTO_SHARE = {"ss": 0.22, "trojan": 0.30}
+# If those caps leave the list under 60% full, a second pass relaxes them a bit
+# instead of handing the reader a short subscription.
+PROTO_SHARE_RELAXED = {"ss": 0.35, "trojan": 0.40}
+
+
+def diversify(items: list, limit: int, codes: dict = None, per_country: int = 8, share: dict = None) -> list:
+    """Score-ordered pick that also caps protocol share and per-country repetition.
+
+    ``items`` must already be score-sorted (``select`` does that). Configs pushed
+    aside by the country cap are retried once the whole list has been walked, so a
+    pool with only a few countries still fills up.
+    """
+    codes = codes or {}
+    caps = {proto: max(1, int(limit * factor)) for proto, factor in (PROTO_SHARE if share is None else share).items()}
+    counts: dict = {}
+    countries: dict = {}
+    chosen = []
+    deferred = []
+    for item in items:
+        proto = str(item.get("proto") or "").lower()
+        code = str(codes.get(str(item.get("host") or "").strip().lower(), "") or "??").upper()
+        if counts.get(proto, 0) >= caps.get(proto, limit):
+            continue
+        # "??" means the geo lookup found nothing: never let that starve the list.
+        if code != "??" and countries.get(code, 0) >= per_country:
+            deferred.append(item)
+            continue
+        chosen.append(item)
+        counts[proto] = counts.get(proto, 0) + 1
+        countries[code] = countries.get(code, 0) + 1
+        if len(chosen) >= limit:
+            return chosen
+    for item in deferred:
+        if len(chosen) >= limit:
+            break
+        proto = str(item.get("proto") or "").lower()
+        if counts.get(proto, 0) >= caps.get(proto, limit):
+            continue
+        chosen.append(item)
+        counts[proto] = counts.get(proto, 0) + 1
+    return chosen
+
+
+def protocol_mix(items: list) -> dict:
+    mix: dict = {}
+    for item in items:
+        proto = str(item.get("proto") or "").lower()
+        if proto:
+            mix[proto] = mix.get(proto, 0) + 1
+    return mix
+
+
 def build_digest(stats: dict, best: list, subs: dict, generated_at: float) -> str:
     fmt = lambda value: "{:,}".format(int(value or 0))
     stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(generated_at))
@@ -76,6 +131,13 @@ def build_digest(stats: dict, best: list, subs: dict, generated_at: float) -> st
         "",
         head,
     ]
+    mix = stats.get("protos") or {}
+    if mix:
+        parts = [proto.upper() + " " + fmt(mix[proto]) for proto in ("vless", "vmess", "trojan", "ss") if mix.get(proto)]
+        line = "🧩 " + " · ".join(parts)
+        if int(stats.get("countries") or 0) > 0:
+            line += " · 🌍 " + fmt(stats["countries"]) + " کشور"
+        lines.append(line)
     for label, urls in (("🌍 ساب جهانی", global_urls), ("🇮🇷 ساب ایران", ir_urls)):
         if not urls:
             continue

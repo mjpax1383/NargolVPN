@@ -1,5 +1,5 @@
 {
-  "_comment": "Verified live on 2025-09 with `python agent.py sources`. Dead entries cost ~2s each and report 0 links; run the probe-sources workflow every few months and prune. Add a Telegram slug only after https://t.me/s/<slug> shows posts in a browser.",
+  "_comment": "Verified live on 2026-11 with `python agent.py sources`. Dead entries cost ~2s each and report 0 links; run the probe-sources workflow every few months and prune. Add a Telegram slug only after https://t.me/s/<slug> shows posts in a browser.",
   "timeout_sec": 20,
   "max_bytes_per_source": 2500000,
   "max_per_source": 700,
@@ -9,17 +9,37 @@
     "v2rayngvpn",
     "FreeV2rayConfig",
     "v2ray_free_conf",
-    "PrivateVPNs"
+    "PrivateVPNs",
+    "oneclickvpnkeys",
+    "proxy_mtm",
+    "iranv2ray",
+    "v2ray_configss",
+    "DirectVPN",
+    "VlessConfig",
+    "proxystore11",
+    "vpnfail_vless",
+    "v2rayan",
+    "DarkVPN_ir"
   ],
   "raw_urls": [
     "https://raw.githubusercontent.com/LalatinaHub/Mineral/master/result/nodes",
     "https://raw.githubusercontent.com/mheidari98/.proxy/main/all",
     "https://raw.githubusercontent.com/ALIILAPRO/v2rayNG-Config/main/server.txt",
+    "https://raw.githubusercontent.com/ALIILAPRO/v2rayNG-Config/main/sub.txt",
+    "https://raw.githubusercontent.com/Leon406/SubCrawler/main/sub/share/vless",
+    "https://raw.githubusercontent.com/Surfboardv2ray/TGParse/main/splitted/vless",
+    "https://raw.githubusercontent.com/Surfboardv2ray/TGParse/main/splitted/vmess",
+    "https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector/main/sub/mix",
+    "https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector/main/sub/vless",
+    "https://raw.githubusercontent.com/MhdiTaheri/V2rayCollector/main/sub/vmess",
     "https://raw.githubusercontent.com/mahdibland/ShadowsocksAggregator/master/sub/sub_merge.txt",
-    "https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list.txt",
-    "https://raw.githubusercontent.com/ts-sf/fly/main/v2",
     "https://raw.githubusercontent.com/mahdibland/ShadowsocksAggregator/master/Eternity.txt",
+    "https://raw.githubusercontent.com/AzadNetCH/Clash/main/AzadNet.txt",
+    "https://raw.githubusercontent.com/peasoft/NoMoreWalls/master/list.txt",
+    "https://raw.githubusercontent.com/ermaozi/get_subscribe/main/subscribe/v2ray.txt",
+    "https://raw.githubusercontent.com/Kwinshadow/TelegramV2rayCollector/main/sublinks/mix.txt",
     "https://raw.githubusercontent.com/freefq/free/master/v2",
-    "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub"
+    "https://raw.githubusercontent.com/Pawdroid/Free-servers/main/sub",
+    "https://raw.githubusercontent.com/ts-sf/fly/main/v2"
   ]
 }
