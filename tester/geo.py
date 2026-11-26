@@ -1,12 +1,13 @@
 """Country lookup for config names: NargolVPN|4821|DE flag.
 
-Runs only for configs that survived the test, so a typical hour is 10-40 lookups.
+Runs once per published pool (a few hundred hosts), with a total time budget.
 Every provider is free and key-less; if all of them fail we simply omit the flag.
 """
 from __future__ import annotations
 
 import json
 import socket
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -79,11 +80,13 @@ def flag(code: str) -> str:
     return chr(0x1F1E6 + ord(code[0]) - 65) + chr(0x1F1E6 + ord(code[1]) - 65)
 
 
-def countries_for(hosts, workers: int = 16, timeout: float = 4.0) -> dict:
+def countries_for(hosts, workers: int = 16, timeout: float = 4.0, budget: float = 150.0) -> dict:
     """Map host -> ISO code for the given hosts (deduplicated, parallel, never raises).
 
     Resolution and lookup are split so a hostname is resolved once and an address is
     queried once: a family of 600 configs usually shares a few hundred addresses.
+    ``budget`` bounds the whole pass: once it is gone the remaining hosts simply get
+    no flag instead of holding the hourly run hostage.
     """
     wanted = sorted({str(h or "").strip().lower() for h in hosts if str(h or "").strip()})
     if not wanted:
@@ -91,6 +94,13 @@ def countries_for(hosts, workers: int = 16, timeout: float = 4.0) -> dict:
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         resolved = dict(zip(wanted, pool.map(resolve, wanted)))
     addresses = sorted({ip for ip in resolved.values() if ip})
+    stop = time.time() + max(1.0, budget)
+
+    def look(ip: str) -> str:
+        if time.time() > stop:
+            return ""
+        return country_of_ip(ip, timeout)
+
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        looked_up = dict(zip(addresses, pool.map(lambda ip: country_of_ip(ip, timeout), addresses)))
+        looked_up = dict(zip(addresses, pool.map(look, addresses)))
     return {host: looked_up.get(ip, "") for host, ip in resolved.items()}
