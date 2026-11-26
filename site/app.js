@@ -49,21 +49,62 @@
 
     // Without a vantage point inside Iran the mirror would be an empty file: hide it instead.
     const hasIr = Number(irCount) > 0;
-    const irButton = document.querySelector(".sub[data-copy=\"__IR__\"]");
-    if (irButton) irButton.hidden = !hasIr;
     const irToggle = $("only-ir");
     if (irToggle && irToggle.closest("label")) irToggle.closest("label").hidden = !hasIr;
     const irStat = $("stat-ir");
     if (irStat && irStat.closest(".stat")) irStat.closest(".stat").hidden = !hasIr;
 
-    const base = (state.info && state.info.base) || apiBase;
-    document.querySelectorAll(".sub").forEach((button) => {
-      const key = button.dataset.copy;
-      const suffix = key === "__IR__" ? "/sub/ir" : key === "__GLOBAL__" ? "/sub/global" : "/sub/all";
-      button.dataset.value = base + suffix;
-    });
-
+    renderSubs(hasIr);
     paint();
+  }
+
+  const FAMILY_ICON = { global: "🌍", ir: "🇮🇷", all: "📦" };
+  const FAMILY_NAME = { global: "ساب جهانی", ir: "ساب ایران", all: "ساب کامل" };
+
+  function familyOf(name) {
+    const match = String(name).match(/^(all|global|ir)(\d*)$/);
+    return match ? { family: match[1], index: Number(match[2] || 1) } : null;
+  }
+
+  // The worker decides how many chunks each family has; the site just lists them.
+  function renderSubs(hasIr) {
+    const base = (state.info && state.info.base) || apiBase;
+    const info = (state.info && state.info.subs) || {};
+    const chunks = {};
+    Object.keys(info).forEach((name) => {
+      // Chunk names only: /sub/global is an alias of /sub/global1, not a fourth chunk.
+      if (!/\d$/.test(name)) return;
+      const parsed = familyOf(name);
+      if (!parsed) return;
+      chunks[parsed.family] = chunks[parsed.family] || [];
+      chunks[parsed.family].push({
+        index: parsed.index,
+        url: (info[name] && info[name].url) || base + "/sub/" + name,
+        count: Number((info[name] && info[name].count) || 0),
+      });
+    });
+    Object.values(chunks).forEach((list) => list.sort((a, b) => a.index - b.index));
+
+    const host = $("subs");
+    host.textContent = "";
+    ["global", "ir", "all"].forEach((family) => {
+      if (family === "ir" && !hasIr) return;
+      const list = chunks[family] && chunks[family].length
+        ? chunks[family]
+        : [{ index: 1, url: base + "/sub/" + family }];
+      list.forEach((chunk) => {
+        const button = document.createElement("button");
+        button.className = "sub";
+        const label = document.createElement("span");
+        label.textContent = FAMILY_ICON[family] + " " + FAMILY_NAME[family] +
+          (list.length > 1 ? " · بخش " + chunk.index + " از " + list.length : "");
+        const hint = document.createElement("em");
+        hint.textContent = "کپی لینک";
+        button.append(label, hint);
+        button.addEventListener("click", () => copyText(chunk.url));
+        host.append(button);
+      });
+    });
   }
 
   function paint() {

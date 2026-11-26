@@ -47,8 +47,22 @@ export function renderSubPage(input) {
   const { name, plain, updatedAt, base, site } = input;
   const lines = String(plain || "").split("\n").map((l) => l.trim()).filter(Boolean);
   const count = lines.length;
-  const label = LABELS[name] || name;
+  const familyMatch = String(name).match(/^([a-z]+)(\d*)$/);
+  const familyLabel = familyMatch ? (LABELS[familyMatch[1]] || familyMatch[1]) : name;
+  const label = familyMatch && familyMatch[2] && familyMatch[2] !== "1"
+    ? familyLabel + " · بخش " + familyMatch[2]
+    : familyLabel;
   const siteSuffix = site ? " · " + esc(site) : "";
+  const siblings = Array.isArray(input.siblings) ? input.siblings : [];
+  const activeIndex = Number(input.index || 1);
+  const navHtml = siblings.length > 1
+    ? '<nav class="nav">' + siblings.map((item) =>
+        '<a class="pill' + (Number(item.index) === activeIndex ? " on" : "") + '" href="/sub/' + esc(item.name) + '">بخش ' +
+        esc(item.index || "") + ' <b>' + esc(item.count) + "</b></a>").join("") + "</nav>"
+    : "";
+  const multiTip = siblings.length > 1
+    ? '<div class="tip">این ساب به چند بخش تقسیم شده است. کلاینت فقط همین یک لینک را اضافه می‌کند؛ برای داشتن همهٔ سرورها، بخش‌های دیگر را هم جداگانه اضافه کن.</div>'
+    : "";
   const subUrl = base + "/sub/" + name;
   const protos = {};
   for (const line of lines) protos[protoOf(line)] = (protos[protoOf(line)] || 0) + 1;
@@ -75,7 +89,12 @@ export function renderSubPage(input) {
     ".wrap{max-width:640px;margin:0 auto}",
     ".brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:20px;letter-spacing:.2px}",
     ".dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 14px var(--accent)}",
-    ".subtitle{color:var(--muted);font-size:13px;margin:6px 0 20px}",
+    ".subtitle{color:var(--muted);font-size:13px;margin:6px 0 14px}",
+    ".nav{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 16px}",
+    ".pill{font-size:12.5px;text-decoration:none;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 12px}",
+    ".pill b{color:var(--text);font-weight:700}",
+    ".pill.on{background:#10241c;border-color:#1d4a3a;color:var(--accent)}",
+    ".pill.on b{color:var(--accent)}",
     ".card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;text-align:center}",
     ".num{font-size:44px;font-weight:800;line-height:1.1}",
     ".num small{font-size:14px;color:var(--muted);font-weight:600;margin-inline-start:6px}",
@@ -109,6 +128,7 @@ export function renderSubPage(input) {
     "</style></head><body><div class=\"wrap\">",
     '<div class="brand"><span class="dot"></span>NargolVPN</div>',
     '<div class="subtitle">کانفیگ‌های تست‌شده با اتصال واقعی · به‌روزرسانی خودکار هر ساعت</div>',
+    navHtml,
     '<section class="card">',
     '<div class="num">' + count + '<small>کانفیگ</small></div>',
     '<div class="lbl">ساب ' + esc(label) + "</div>",
@@ -120,6 +140,7 @@ export function renderSubPage(input) {
     '<a class="btn" href="data:text/plain;charset=utf-8,' + esc(encodeURIComponent(String(plain || ""))) + '" download="nargol-' + esc(name) + '.txt">دانلود فایل<small>DOWNLOAD</small></a>',
     "</div>",
     "</section>",
+    multiTip,
     '<div class="tip">این صفحه را مرورگر می‌بیند. اگر همین لینک را در <b>v2rayNG</b>، <b>NekoBox</b>، <b>Hiddify</b> یا <b>Clash</b> به‌عنوان «سابسکریپشن» اضافه کنی، خودِ فایل را دریافت می‌کند.</div>',
     "<h2>کانفیگ‌ها</h2>",
     '<section class="list">' + rows + "</section>",

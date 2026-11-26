@@ -21,13 +21,28 @@ export function subUrl(env, origin, name) {
   return publicBase(env, origin) + "/sub/" + name;
 }
 
-export function replyMarkup(env, origin, irCount) {
-  const rows = [[{ text: "🌍 ساب جهانی", url: subUrl(env, origin, "global") }]];
+function chunkButtons(env, origin, family, total, icon, label) {
+  const rows = [];
+  const buttons = [];
+  for (let index = 1; index <= total; index += 1) {
+    buttons.push({
+      text: total === 1 ? icon + " " + label : icon + " بخش " + index,
+      url: subUrl(env, origin, family + index),
+    });
+  }
+  for (let index = 0; index < buttons.length; index += 4) rows.push(buttons.slice(index, index + 4));
+  return rows;
+}
+
+export function replyMarkup(env, origin, chunks) {
+  const global = Math.max(1, Math.min(9, Number((chunks && chunks.global) || 1)));
+  const ir = Math.max(0, Math.min(9, Number((chunks && chunks.ir) || 0)));
+  const rows = chunkButtons(env, origin, "global", global, "🌍", "ساب جهانی");
   // The Iranian mirror only exists once a vantage point inside Iran has run.
-  if (Number(irCount) > 0) rows[0].push({ text: "🇮🇷 ساب ایران", url: subUrl(env, origin, "ir") });
+  if (ir > 0) rows.push(...chunkButtons(env, origin, "ir", ir, "🇮🇷", "ساب ایران"));
   const site = (env.SITE_URL || "").trim();
   if (site) rows.push([{ text: "📊 لیست زنده و وضعیت", url: site }]);
-  return { inline_keyboard: rows };
+  return { inline_keyboard: rows.length ? rows : chunkButtons(env, origin, "global", 1, "🌍", "ساب جهانی") };
 }
 
 export async function sendTelegram(env, html, markup) {
@@ -118,15 +133,27 @@ export async function dispatchWorkflow(env) {
 export async function pushSubsToGithub(env, subs) {
   const stamp = new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC";
   const results = {};
-  for (const name of ["all", "ir", "global"]) {
-    const sub = subs[name];
-    if (!sub || typeof sub.body !== "string") continue;
+  const numbered = Object.keys(subs || {})
+    .filter((name) => /^(all|global|ir)\d+$/.test(name) && subs[name] && typeof subs[name].body === "string")
+    .sort();
+  for (const name of numbered) {
     results[name] = await commitFile(
       env,
       "subs/" + name + ".txt",
-      sub.body,
-      "subs(" + name + "): " + (sub.count || 0) + " configs @ " + stamp,
+      subs[name].body,
+      "subs(" + name + "): " + (subs[name].count || 0) + " configs @ " + stamp,
     );
+  }
+  // One flat archive of every published config, so the repo alone can rebuild a sub.
+  const archive = numbered
+    .filter((name) => name.indexOf("all") === 0)
+    .map((name) => String(subs[name].plain || ""))
+    .join("\n")
+    .split("\n")
+    .filter(Boolean)
+    .join("\n");
+  if (archive) {
+    results["all.txt"] = await commitFile(env, "subs/all.txt", archive, "subs(all): archive @ " + stamp);
   }
   return results;
 }
@@ -138,8 +165,19 @@ export function buildDigest(input) {
   lines.push("🔄 <b>بروزرسانی ساعتی کانفیگ‌ها</b>");
   lines.push("");
   lines.push("🧪 تست‌شده: " + fmt(stats.tested) + " · ✅ سالم: " + fmt(stats.alive) + " · 🇮🇷 سازگار با ایران: " + fmt(stats.ir));
-  if (subs.global) lines.push("🌍 ساب جهانی: <code>" + subs.global + "</code>");
-  if (subs.ir && Number(stats.ir) > 0) lines.push("🇮🇷 ساب ایران: <code>" + subs.ir + "</code>");
+  const families = [
+    ["🌍 ساب جهانی", Array.isArray(subs.global) ? subs.global : [subs.global]],
+    ["🇮🇷 ساب ایران", Number(stats.ir) > 0 ? (Array.isArray(subs.ir) ? subs.ir : [subs.ir]) : []],
+  ];
+  for (const [label, urls] of families) {
+    const list = (urls || []).filter(Boolean);
+    if (!list.length) continue;
+    if (list.length === 1) lines.push(label + ": <code>" + list[0] + "</code>");
+    else {
+      lines.push(label + " (" + list.length + " بخش):");
+      list.forEach((url, index) => lines.push((index + 1) + ". <code>" + url + "</code>"));
+    }
+  }
   lines.push("");
   if (best.length) {
     lines.push("<b>🏆 سریع‌ترین‌ها</b>");

@@ -18,9 +18,9 @@ export function json(data, status = 200, extra = {}) {
   });
 }
 
-export function text(body, contentType = "text/plain; charset=utf-8", cache = "public, max-age=300") {
+export function text(body, contentType = "text/plain; charset=utf-8", cache = "public, max-age=300", status = 200) {
   return new Response(body, {
-    status: 200,
+    status,
     headers: {
       "content-type": contentType,
       "access-control-allow-origin": "*",

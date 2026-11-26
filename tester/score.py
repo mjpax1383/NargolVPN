@@ -25,9 +25,9 @@ def score_of(result: dict, works_ir: bool = False) -> float:
 BRAND = "NargolVPN"
 
 
-def brand_uri(uri: str, cid: str = "") -> str:
-    """Name every config NargolVPN|<digits>. The number is derived from the config id,
-    so it looks random but never changes between runs (clients keep their entry)."""
+def brand_uri(uri: str, cid: str = "", marker: str = "") -> str:
+    """Name every config NargolVPN|<digits>|<flag>. The number is derived from the config
+    id, so it looks random but never changes between runs (clients keep their entry)."""
     text = str(uri or "").strip()
     if not text:
         return text
@@ -35,7 +35,10 @@ def brand_uri(uri: str, cid: str = "") -> str:
         number = int(str(cid or "")[:8], 16) % 9000 + 1000
     except ValueError:
         number = sum(ord(ch) for ch in text) % 9000 + 1000
-    return text.split("#", 1)[0] + "#" + quote(BRAND + "|" + str(number), safe="|")
+    tag = BRAND + "|" + str(number)
+    if marker:
+        tag += "|" + str(marker)
+    return text.split("#", 1)[0] + "#" + quote(tag, safe="|")
 
 
 def armour(uris: Iterable[str]) -> dict:
@@ -62,19 +65,26 @@ def select(items: list, limit: int, predicate) -> list:
 def build_digest(stats: dict, best: list, subs: dict, generated_at: float) -> str:
     fmt = lambda value: "{:,}".format(int(value or 0))
     stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(generated_at))
-    ir_url = str(subs.get("ir_url") or "").strip()
+    global_urls = [url for url in (subs.get("global") or []) if url]
+    ir_urls = [url for url in (subs.get("ir") or []) if url] if int(stats.get("ir") or 0) > 0 else []
     ir_count = int(stats.get("ir") or 0)
     head = "🧪 تست‌شده: " + fmt(stats.get("tested")) + " · ✅ سالم: " + fmt(stats.get("alive"))
-    if ir_url:
+    if ir_urls:
         head += " · 🇮🇷 سازگار با ایران: " + fmt(ir_count)
     lines = [
         "🔄 <b>بروزرسانی ساعتی کانفیگ‌ها</b>",
         "",
         head,
-        "🌍 ساب جهانی: <code>" + subs.get("global_url", "") + "</code>",
     ]
-    if ir_url:
-        lines.append("🇮🇷 ساب ایران: <code>" + ir_url + "</code>")
+    for label, urls in (("🌍 ساب جهانی", global_urls), ("🇮🇷 ساب ایران", ir_urls)):
+        if not urls:
+            continue
+        if len(urls) == 1:
+            lines.append(label + ": <code>" + urls[0] + "</code>")
+            continue
+        lines.append(label + " (" + str(len(urls)) + " بخش):")
+        for index, url in enumerate(urls, start=1):
+            lines.append(str(index) + ". <code>" + url + "</code>")
     if best:
         lines.append("")
         lines.append("<b>🏆 سریع‌ترین‌ها</b>")

@@ -30,11 +30,14 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
 import collect as collector  # noqa: E402
+import geo as geo_mod  # noqa: E402
 import score as scoring  # noqa: E402
 import xray as xray_mod  # noqa: E402
 from uri import Config, parse_uri  # noqa: E402
 
 VERSION = "1.0.0"
+# Subscription split: more than this many configs per family opens /sub/global2, ...
+CHUNK_SIZE = 50
 RUN_ID = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + str(random.randint(1000, 9999))
 
 
@@ -161,7 +164,11 @@ def save_seen(state_dir: str, seen: dict, ttl_hours: float, cap: int = 40000) ->
 
 
 def pick_candidates(found: dict, alive_rows: list, seen: dict, max_new: int, max_retest: int) -> tuple:
-    """Untested configs first, then whatever was alive last hour."""
+    """Survivors first (oldest check first), then configs we have never tested.
+
+    Retests lead on purpose: when a run hits its time budget, a new config is worth
+    postponing; the check that removes a dead server is not.
+    """
     known = set(seen.keys())
     retest = []
     for row in alive_rows:
@@ -170,10 +177,12 @@ def pick_candidates(found: dict, alive_rows: list, seen: dict, max_new: int, max
         if cfg is None:
             continue
         known.add(cfg.id)
-        retest.append(cfg)
+        retest.append((float(row.get("last_ok_at") or 0), cfg))
+    retest.sort(key=lambda pair: pair[0])
     fresh = [cfg for cfg_id, cfg in found.items() if cfg_id not in known]
     random.shuffle(fresh)
-    return fresh[:max_new] + retest[:max_retest], len(fresh)
+    ordered = [cfg for _, cfg in retest[:max_retest]] + fresh[:max_new]
+    return ordered, len(fresh)
 
 
 def run_tests(configs: list, xray_bin: str, workers: int, timeout: float, tries: int, max_seconds: float) -> dict:
@@ -263,31 +272,52 @@ def publish(wc: WorkerClient, stats: dict, dry_run: bool) -> dict:
     info = wc.get("/api/info", signed=False)
     base = (info.get("base") or wc.base).rstrip("/")
     items = build_items(wc)
-    global_sel = scoring.select(items, 40, lambda item: item["works_global"])
-    ir_sel = scoring.select(items, 40, lambda item: item["works_ir"])
-    all_sel = scoring.select(items, 50, lambda item: True)
-    def tagged(selection):
-        return [scoring.brand_uri(item["uri"], item.get("id")) for item in selection]
+    global_sel = scoring.select(items, 200, lambda item: item["works_global"])
+    ir_sel = scoring.select(items, 120, lambda item: item["works_ir"])
+    all_sel = scoring.select(items, 260, lambda item: True)
 
-    subs = {
-        "global": scoring.armour(tagged(global_sel)),
-        "ir": scoring.armour(tagged(ir_sel)),
-        "all": scoring.armour(tagged(all_sel)),
-    }
+    # One lookup per unique host, only for configs that are actually published.
+    hosts = [item.get("host") for item in all_sel + ir_sel + global_sel]
+    try:
+        codes = geo_mod.countries_for(hosts) if hosts else {}
+    except Exception as error:  # noqa: BLE001
+        log("geo lookup failed, publishing without flags: " + str(error)[:80])
+        codes = {}
+
+    def tagged(selection):
+        out = []
+        for item in selection:
+            host = str(item.get("host") or "").strip().lower()
+            out.append(scoring.brand_uri(item["uri"], item.get("id"), geo_mod.flag(codes.get(host, ""))))
+        return out
+
+    subs = {}
+    families = {}
+    for family, selection in (("global", global_sel), ("ir", ir_sel), ("all", all_sel)):
+        uris = tagged(selection)
+        groups = [uris[index:index + CHUNK_SIZE] for index in range(0, len(uris), CHUNK_SIZE)] or [[]]
+        families[family] = len(groups)
+        for number, group in enumerate(groups, start=1):
+            subs[family + str(number)] = scoring.armour(group)
+        # Alias: /sub/global keeps working and always means chunk one.
+        subs[family] = subs[family + "1"]
+
     stats = dict(stats)
     stats["ir"] = len(ir_sel)
     stats["alive"] = len(global_sel)
     # Only advertise the Iranian mirror once a vantage point inside Iran has fed it.
-    ir_url = base + "/sub/ir" if ir_sel else ""
+    ir_urls = [base + "/sub/ir" + str(n) for n in range(1, families["ir"] + 1)] if ir_sel else []
+    global_urls = [base + "/sub/global" + str(n) for n in range(1, families["global"] + 1)]
     digest = scoring.build_digest(
         stats,
         global_sel,
-        {"global_url": base + "/sub/global", "ir_url": ir_url},
+        {"global": global_urls, "ir": ir_urls},
         time.time(),
     )
     payload = {
         "subs": subs,
-        "counts": {"global": subs["global"]["count"], "ir": subs["ir"]["count"], "all": subs["all"]["count"]},
+        "counts": {name: sub["count"] for name, sub in subs.items()},
+        "chunks": families,
         "top": scoring.top_payload(global_sel),
         "digest_html": digest,
         "stats": stats,

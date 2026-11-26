@@ -3,9 +3,11 @@
 import { fetchTimeout, isPublicHttpUrl, json, nowSec, text, verifySignature } from "./net.js";
 import {
   claimIr,
+  deleteSubsExcept,
   getMeta,
   getState,
   getSub,
+  listSubs,
   getTop,
   health,
   insertRun,
@@ -19,7 +21,13 @@ import {
 import { buildDigest, commitFile, dispatchWorkflow, publicBase, pushSubsToGithub, replyMarkup, sendTelegram, subUrl } from "./publish.js";
 import { renderSubPage, wantsHtml } from "./subpage.js";
 
-const SUB_NAMES = new Set(["ir", "global", "all"]);
+// /sub/global, /sub/global2, ...: one family per audience, split every 50 configs.
+const SUB_NAME_RE = /^(all|global|ir)([1-9]\d?)?$/;
+
+function familyOf(name) {
+  const match = String(name).match(/^([a-z]+)(\d*)$/);
+  return match ? { family: match[1], index: Number(match[2] || 1) } : null;
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -77,18 +85,30 @@ async function serveSub(env, request, path) {
   const parts = path.split("/").filter(Boolean);
   const name = parts[1] || "all";
   const raw = parts[2] === "plain";
-  if (!SUB_NAMES.has(name)) return json({ error: "unknown_sub" }, 404);
+  if (!SUB_NAME_RE.test(name)) return json({ error: "unknown_sub" }, 404);
   const row = await getSub(env, name);
-  if (!row) return text("", "text/plain; charset=utf-8", "no-store");
+  // A chunk that no longer exists must fail loudly, not hand a client an empty file.
+  if (!row) return text("", "text/plain; charset=utf-8", "no-store", 404);
   const plain = String(row.plain || "");
   if (raw) return text(plain, "text/plain; charset=utf-8", "public, max-age=120");
   if (wantsHtml(request)) {
+    const family = familyOf(name);
+    const all = await listSubs(env);
+    const siblings = all
+      .filter((item) => {
+        const info = familyOf(item.name);
+        return info && family && info.family === family.family && /\d$/.test(item.name);
+      })
+      .sort((a, b) => familyOf(a.name).index - familyOf(b.name).index)
+      .map((item) => ({ name: item.name, count: Number(item.count || 0), index: familyOf(item.name).index }));
     const page = renderSubPage({
       name,
       plain,
       updatedAt: row.updated_at,
       base: publicBase(env, new URL(request.url).origin),
       site: env.SITE_URL || "",
+      siblings,
+      index: family ? family.index : 1,
     });
     return text(page, "text/html; charset=utf-8", "no-store");
   }
@@ -113,18 +133,21 @@ function edgeCached(response, ttl) {
   });
 }
 
-function apiInfo(env, url) {
+async function apiInfo(env, url) {
   const base = publicBase(env, url.origin);
+  const rows = await listSubs(env);
+  const subs = {};
+  for (const row of rows) {
+    subs[row.name] = {
+      url: base + "/sub/" + row.name,
+      count: Number(row.count || 0),
+      updated_at: Number(row.updated_at || 0),
+    };
+  }
   return json(
-    {
-      ok: true,
-      version: 1,
-      base,
-      site: env.SITE_URL || "",
-      subs: { all: base + "/sub/all", global: base + "/sub/global", ir: base + "/sub/ir" },
-    },
+    { ok: true, version: 2, base, site: env.SITE_URL || "", subs },
     200,
-    { "cache-control": "public, max-age=300" },
+    { "cache-control": "public, max-age=60" },
   );
 }
 
@@ -174,11 +197,19 @@ async function apiPublish(env, body, url) {
   // 0 when no vantage point inside Iran has run yet: the mirror is then hidden rather than empty.
   const irCount = Number(counts.ir || (subs.ir && subs.ir.count) || 0);
 
-  for (const name of ["ir", "global", "all"]) {
-    const sub = subs[name];
-    if (!sub || typeof sub.body !== "string") continue;
+  const written = [];
+  for (const [name, sub] of Object.entries(subs)) {
+    if (!SUB_NAME_RE.test(name) || !sub || typeof sub.body !== "string") continue;
     await setSub(env, name, sub.body, String(sub.plain || ""), Number(sub.count) || 0);
+    written.push(name);
   }
+  // A family that shrank must lose its extra chunks instead of serving stale ones.
+  const families = Array.from(new Set(written.map((name) => { const info = familyOf(name); return info ? info.family : ""; }).filter(Boolean)));
+  await deleteSubsExcept(env, written, families);
+  const chunks = {
+    global: Math.max(1, Number((body.chunks && body.chunks.global) || 1)),
+    ir: irCount > 0 ? Math.max(1, Number((body.chunks && body.chunks.ir) || 1)) : 0,
+  };
   if (Array.isArray(body.top)) {
     await setTop(env, { generated_at: nowSec(), items: body.top.slice(0, 60) });
   }
@@ -196,12 +227,12 @@ async function apiPublish(env, body, url) {
         stats: body.stats || {},
         best: body.best || [],
         subs: {
-          global: subUrl(env, origin, "global"),
-          ir: irCount > 0 ? subUrl(env, origin, "ir") : "",
+          global: Array.from({ length: chunks.global }, (_, index) => subUrl(env, origin, "global" + (index + 1))),
+          ir: Array.from({ length: chunks.ir }, (_, index) => subUrl(env, origin, "ir" + (index + 1))),
         },
         generated_at: now,
       });
-    const sent = await sendTelegram(env, html, replyMarkup(env, origin, irCount));
+    const sent = await sendTelegram(env, html, replyMarkup(env, origin, chunks));
     if (sent.ok) {
       await setMeta(env, "last_post", String(now));
       telegram = { posted: true, message_id: sent.message_id };
@@ -213,7 +244,12 @@ async function apiPublish(env, body, url) {
   }
 
   const github = await pushSubsToGithub(env, subs);
-  const readme = "# Subscription mirrors\n\n- all: " + base + "/sub/all\n- ir: " + base + "/sub/ir\n- global: " + base + "/sub/global\n";
+  const lines = ["# Subscription mirrors", "", "Updated: " + new Date(now * 1000).toISOString(), ""];
+  for (const name of written.slice().sort()) {
+    lines.push("- " + name + " (" + (Number(subs[name] && subs[name].count) || 0) + " configs): " + base + "/sub/" + name);
+  }
+  lines.push("");
+  const readme = lines.join("\n");
   await commitFile(env, "subs/README.md", readme, "subs: refresh mirror readme");
 
   return json({ ok: true, telegram, github, counts, base });

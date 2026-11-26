@@ -149,6 +149,31 @@ export async function setSub(env, name, body, plain, count) {
     .run();
 }
 
+export async function listSubs(env) {
+  const rows = await env.DB.prepare("SELECT name, count, updated_at FROM subs ORDER BY name").all();
+  return rows.results || [];
+}
+
+export async function deleteSubsExcept(env, names, families) {
+  // Only touch the families this publish owns: a partial publisher must never
+  // wipe a family it did not send.
+  const keep = new Set((names || []).filter(Boolean));
+  const owned = new Set((families || []).filter(Boolean));
+  if (!keep.size || !owned.size) return 0;
+  const rows = await env.DB.prepare("SELECT name FROM subs").all();
+  const stale = (rows.results || [])
+    .map((row) => String(row.name))
+    .filter((name) => {
+      const match = name.match(/^([a-z]+)\d*$/);
+      return match && owned.has(match[1]) && !keep.has(name);
+    });
+  if (!stale.length) return 0;
+  await env.DB.prepare("DELETE FROM subs WHERE name IN (" + stale.map(() => "?").join(",") + ")")
+    .bind(...stale)
+    .run();
+  return stale.length;
+}
+
 export async function getSub(env, name) {
   return env.DB.prepare("SELECT body, plain, count, updated_at FROM subs WHERE name = ?").bind(name).first();
 }

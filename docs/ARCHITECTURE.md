@@ -24,10 +24,10 @@ T+00:05  GitHub Actions شروع می‌شود
           ۲. harvest: کانال‌های تلگرام + فیدهای GitHub
           ۳. parse: vless/vmess/trojan/ss → Canonical ID
           ۴. فیلتر seen-cache (۳۶ ساعت اخیر را دوباره تست نکن)
-          ۵. GET /api/state → لیست زنده‌های ساعت قبل برای تست مجدد
-          ۶. تست موازی با Xray + curl
+          ۵. GET /api/state → لیست زنده‌های ساعت قبل (پیرترین تست اول)
+          ۶. تست موازی با Xray + curl — اول تست مجدد، بعد تازه‌ها
           ۷. POST /api/ingest در بسته‌های ۱۰۰تایی
-          ۸. GET /api/state و ساخت ساب‌ها
+          ۸. GET /api/state + GeoIP زنده‌ها و ساخت ساب‌ها (هر ۵۰ تا یک بخش)
           ۹. POST /api/publish
 
 T+00:20  Worker: upsert در D1، آپدیت subs، ارسال پیام (با cooldown)،
@@ -64,10 +64,11 @@ X-Sig = hex( HMAC-SHA256( secret, X-Ts + "." + rawBody ) )
 | --- | --- |
 | `GET /` | صفحهٔ راهنمای کوتاه |
 | `GET /health` | شمارش‌ها، وضعیت ساب‌ها، آخرین dispatch/post |
-| `GET /api/info` | آدرس پایه و لینک سه ساب |
+| `GET /api/info` | آدرس پایه + همهٔ بخش‌های ساب با تعداد هر کدام |
 | `GET /api/configs` | JSON برای سایت (top 60) |
 | `GET /sub/all` \| `/sub/global` \| `/sub/ir` | فایل base64 استاندارد ساب — مگر اینکه درخواست از مرورگر باشد (`Sec-Fetch-Mode: navigate` یا UA مرورگر)، که آن‌وقت صفحهٔ HTML برمی‌گردد. `?format=raw` یا `?format=html` این را مجبور می‌کند. عمداً edge-cache نمی‌شود چون کلید کش فقط URL است. |
 | `GET /sub/<name>/plain` | همان، بدون base64 |
+| `GET /sub/global2` … | بخش‌های بعدی یک خانواده؛ نام با `^(all\|global\|ir)[1-9]?\d?$` اعتبارسنجی می‌شود و بخش ناموجود ۴۰۴ می‌دهد. `/sub/global` همیشه alias بخش اول است. |
 
 ## ۵. مسیرهای امضاشده
 
@@ -76,7 +77,7 @@ X-Sig = hex( HMAC-SHA256( secret, X-Ts + "." + rawBody ) )
 | `GET /api/state?limit=300` | — | کانفیگ‌های زندهٔ ۴ ساعت اخیر، مرتب بر اساس score |
 | `GET /api/claim?vantage=ir&limit=120` | — | کانفیگ‌هایی که باید از ایران تست شوند |
 | `POST /api/ingest` | `{vantage, run_id, results[], sources_ok, sources_fail}` | ثبت نتیجهٔ تست |
-| `POST /api/publish` | `{subs, counts, top, digest_html, stats, force}` | ذخیرهٔ ساب + پست تلگرام + کامیت |
+| `POST /api/publish` | `{subs, counts, chunks, top, digest_html, stats, force}` | ذخیرهٔ بخش‌ها + حذف بخش‌های قدیمی + پست تلگرام + کامیت |
 | `POST /api/dispatch` | `{}` | صدا زدن دستی ورک‌فلو |
 | `POST /api/probe?u=<url>` | — | بررسی سریع یک منبع (SSRF-safe) |
 
