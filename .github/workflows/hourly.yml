@@ -1,0 +1,72 @@
+name: hourly-digest
+
+# Two triggers, on purpose:
+#   * the Worker cron calls workflow_dispatch every ~55 min (reliable clock)
+#   * the schedule below is a fallback for when the Worker is down
+# `concurrency` makes a double fire harmless.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "4 * * * *"
+
+concurrency:
+  group: tester-global
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache xray-core
+        uses: actions/cache@v4
+        with:
+          path: tester/bin
+          key: xray-core-${{ runner.os }}-v1
+
+      - name: Offline selftest
+        working-directory: tester
+        run: python agent.py selftest
+
+      - name: Run tester
+        working-directory: tester
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          TESTER_SECRET: ${{ secrets.TESTER_SECRET }}
+        run: >
+          python agent.py run
+          --vantage global
+          --workers 48
+          --timeout 6
+          --tries 2
+          --max-new 280
+          --max-retest 140
+          --max-seconds 1500
+          --json-out run-summary.json
+
+      - name: Write job summary
+        if: always()
+        working-directory: tester
+        run: |
+          python - <<PY
+          import json, os, pathlib
+          path = pathlib.Path("run-summary.json")
+          target = pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"])
+          if not path.exists():
+              target.write_text("no summary produced (run failed early)\n", encoding="utf-8")
+          else:
+              data = json.loads(path.read_text(encoding="utf-8"))
+              rows = ["### vpnbot run", "", "| key | value |", "| --- | --- |"]
+              for key, value in data.items():
+                  rows.append("| " + str(key) + " | " + str(value) + " |")
+              target.write_text("\n".join(rows) + "\n", encoding="utf-8")
+          PY

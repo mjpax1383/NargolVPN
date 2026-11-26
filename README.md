@@ -1,0 +1,143 @@
+# vpnbot — کانفیگ‌های v2ray، هر ساعت تست و منتشر می‌شوند
+
+> یک ربات رایگانِ تمام‌عیار: هر ساعت کانفیگ‌های v2ray/trojan/ss را از تلگرام و مخازن عمومی جمع می‌کند،
+> **با Xray واقعاً به اینترنت وصل می‌شود** (نه پینگ ساده)، سالم‌ها را نگه می‌دارد و در یک کانال تلگرام
+> + سه لینک ساب + یک سایت منتشر می‌کند. هزینه: صفر.
+
+---
+
+## ۱. این پروژه چه می‌کند؟
+
+| مرحله | چه اتفاقی می‌افتد |
+| --- | --- |
+| **جمع‌آوری** | صفحهٔ عمومی کانال‌های تلگرام (`t.me/s/...`) و فیدهای GitHub خوانده و لینک‌ها استخراج می‌شوند |
+| **تست** | هر کانفیگ در یک پروسهٔ Xray واقعی بالا می‌آید، یک درخواست HTTP از داخل تونل می‌رود و زمان پاسخ اندازه‌گیری می‌شود |
+| **امتیازدهی** | نسبت موفقیت + سرعت + سازگاری با ایران → عددی بین ۰ تا ۱ |
+| **انتشار** | ۳ فایل ساب (ایران / جهانی / کامل) در Cloudflare D1، یک پیام خلاصه در کانال، و کامیت در GitHub |
+| **نقطهٔ ایران** | یک گوشی/کامپیوتر قدیمی در ایران، کانفیگ‌های سالم را از Worker می‌گیرد و دوباره تست می‌کند |
+
+## ۲. معماری (چرا سه لایه؟)
+
+```
+   ┌────────────────────── GitHub Actions (رایگان، IP خارج) ──────────────────────┐
+   │  collect  →  xray + curl  →  score  →  POST /api/ingest   →  POST /api/publish│
+   └───────────────────────────────────┬──────────────────────────────────────────┘
+                                       │ HMAC
+                        ┌──────────────▼───────────────┐
+      cron هر ۱۵ دقیقه ─▶│  Cloudflare Worker (D1)      │─▶ Telegram channel
+                        │  ذخیره + ساب + تریگر          │─▶ GitHub subs/*.txt
+                        └──────────────▲───────────────┘
+                                       │ GET /api/claim
+   ┌───────────────────────────────────┴──────────────────────────────────────────┐
+   │  گوشی/PC در ایران (Termux)  →  xray + curl  →  POST /api/ingest (vantage=ir)  │
+   └──────────────────────────────────────────────────────────────────────────────┘
+
+   خواننده‌ها:  /sub/global   /sub/ir   /sub/all   +   سایت استاتیک (Cloudflare Pages)
+```
+
+**چرا Worker خودش تست نمی‌کند؟** چون Worker روی V8 ایزوله اجرا می‌شود: نه باینری اجرا می‌کند نه سوکت خام دارد.
+همچنین سقف CPU آن ۱۰ میلی‌ثانیه در هر فراخوانی است؛ حتی پارس کردن چند هزار کانفیگ هم آن را می‌خواباند.
+پس Worker فقط «حافظه + تایمر + تحویل» است و کار سنگین روی GitHub Actions (رایگان برای ریپوی عمومی) انجام می‌شود.
+
+## ۳. چیزهایی که باید بسازید (همه رایگان)
+
+| سرویس | نقش | سقف رایگان |
+| --- | --- | --- |
+| Cloudflare Worker + D1 | مغز، حافظه، ساب، تایمر | ۱۰۰هزار درخواست/روز، ۱۰ms CPU، ۵GB |
+| GitHub Actions | جمع‌آوری و تست (IP خارج) | برای ریپوی عمومی نامحدود |
+| Telegram Bot + Channel | انتشار ساعت‌به‌ساعت | رایگان |
+| Cloudflare Pages | سایت لیست زنده | رایگان |
+| Termux روی گوشی قدیمی (اختیاری) | نقطهٔ دید ایران | رایگان |
+
+## ۴. راه‌اندازی در ۱۰ دقیقه
+
+```bash
+git clone <repo> vpnbot && cd vpnbot
+python scripts/gen_secret.py --write      # کلید مشترک را بساز و ذخیره کن
+cd worker && npm install
+npx wrangler login
+npx wrangler d1 create vpnbot             # id را در wrangler.toml بگذار
+npx wrangler d1 migrations apply vpnbot --remote
+npx wrangler secret put TESTER_SECRET     # همان کلید مرحلهٔ قبل
+npx wrangler deploy
+```
+
+سپس در GitHub → Settings → Secrets: `WORKER_URL` و `TESTER_SECRET` را اضافه کنید و یک‌بار
+workflow «hourly-digest» را Run کنید. جزئیات کامل، همراه با توضیح هر خطا:
+
+- [`docs/DEPLOY.md`](docs/DEPLOY.md) — نصب قدم‌به‌قدم
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — جریان داده، API، الگوریتم امتیاز
+- [`docs/FREE-TIERS.md`](docs/FREE-TIERS.md) — سقف هر پلتفرم و رفتار پروژه در آن سقف
+- [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) — خطاها و راه‌حل
+- [`docs/SOURCES.md`](docs/SOURCES.md) — افزودن/حذف منبع
+
+## ۵. لینک‌هایی که به دست مخاطب می‌رسد
+
+| مسیر | برای چه کسی |
+| --- | --- |
+| `/sub/global` | کاربران خارج از ایران (سریع‌ترین‌ها از دید سرور خارج) |
+| `/sub/ir` | کاربران داخل ایران (کانفیگ‌هایی که از داخل ایران هم جواب داده‌اند) |
+| `/sub/all` | همه، مرتب‌شده بر اساس امتیاز |
+| `/sub/<name>/plain` | همان فایل بدون base64 (برای دیباگ) |
+| `/api/configs` | JSON برای سایت |
+
+## ۶. ساختار مخزن
+
+```
+worker/            Cloudflare Worker (JS خالص، بدون وابستگی اجرایی)
+  src/index.js     روتر + cron + امضای HMAC
+  src/store.js     لایهٔ D1 و منطق ok_streak/fail_streak
+  src/publish.js   تلگرام + کامیت GitHub + ساخت دیجست
+  src/net.js       هش، HMAC، HTML، محافظ SSRF
+  migrations/      اسکیمای D1
+tester/            عامل پایتون (GitHub Actions یا گوشی)
+  uri.py           پارس vless/vmess/trojan/ss → کانفیگ Xray
+  xray.py          اجرای Xray، تست واقعی با curl، دانلود باینری
+  collect.py       تلگرام + فیدها + باز کردن base64
+  score.py         امتیاز، انتخاب، ساخت ساب و متن پست
+  agent.py         CLI: run / loop / sources / selftest
+site/              سایت استاتیک (Cloudflare Pages)
+.github/workflows/ اجراهای زمان‌بندی‌شده و ابزار سنجش منابع
+docs/              مستندات عملیاتی
+```
+
+## ۷. مثال اجرای دستی
+
+```bash
+# تست کامل از دید خارج + انتشار
+python tester/agent.py run --worker https://vpnbot.xxx.workers.dev --secret <secret> --vantage global
+
+# فقط جمع‌آوری و تست، بدون ارسال (برای امتحان)
+python tester/agent.py run --dry-run --max-new 20 --workers 16
+
+# نقطهٔ ایران روی گوشی
+python tester/agent.py loop --worker https://vpnbot.xxx.workers.dev --secret <secret> --vantage ir --interval 45
+
+# کدام منابع هنوز زنده‌اند؟
+python tester/agent.py sources
+```
+
+## ۸. محدودهٔ پشتیبانی
+
+| پروتکل | وضعیت |
+| --- | --- |
+| VLESS (با TLS / Reality / WS / gRPC / XHTTP) | ✅ تست واقعی |
+| VMess | ✅ |
+| Trojan | ✅ |
+| Shadowsocks | ✅ |
+| Hysteria2 / TUIC | ❌ هستهٔ Xray آن‌ها را ندارد؛ برای پشتیبانی باید هسته به sing-box تغییر کند |
+| MTProto (پراکسی تلگرام) | ❌ اعتبارسنجی نیاز به اکانت تلگرام و کلاینت دارد، نه Xray |
+| WireGuard | ❌ |
+
+اگر کانال شما بیشتر Hysteria2 منتشر می‌کند، این نسخه آن‌ها را نادیده می‌گیرد (لینک‌هایشان پارس نمی‌شود و خطا هم نمی‌دهد).
+
+## ۹. چند نکتهٔ مهم
+
+- **این ابزار «تستِ واقعی» است، نه تضمین.** کانفیگ عمومی ممکن است یک ساعت بعد بمیرد؛ به همین دلیل هر ساعت بازبینی می‌شود و بعد از دو شکست پشت‌سرهم بازنشسته می‌شود.
+- **`workers.dev` در ایران ناپایدار است.** همیشه حداقل دو آینه (GitHub raw / jsDelivr / Pages / هاست شخصی) داشته باشید؛ در `docs/DEPLOY.md` توضیح داده شده.
+- **کلیدها را کامیت نکنید.** `.dev.vars` و `TESTER_SECRET` فقط در Secrets هستند.
+- **مسئولیت حقوقی:** کانفیگ‌ها از کانال‌های عمومی بازنشر می‌شوند؛ قبل از عمومی کردن کانال، قوانین محل خودتان را در نظر بگیرید.
+
+## ۱۰. لایسنس
+
+MIT — استفاده، تغییر و انتشار آزاد.

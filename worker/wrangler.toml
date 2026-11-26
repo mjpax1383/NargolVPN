@@ -1,0 +1,41 @@
+# Cloudflare Worker: the cron heartbeat, storage, subscription mirrors, delivery.
+# Everything here runs inside the free plan: 100k req/day, 10ms CPU/invocation.
+name = "vpnbot"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+
+# Every 15 minutes. The dispatch step itself is gated to once per hour.
+[triggers]
+crons = ["*/15 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vpnbot"
+# Replace with the id printed by `wrangler d1 create vpnbot`. The zero id below only
+# exists so `wrangler dev --local` works before you own a database.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[observability]
+enabled = true
+
+[vars]
+# --- tunables (all strings; the Worker parses them) ---
+DISPATCH_INTERVAL_MIN = "55"
+POST_COOLDOWN_MIN = "55"
+STATE_TTL_MIN = "240"
+MAX_RESULTS_PER_INGEST = "200"
+MAX_IR_CLAIM = "120"
+GITHUB_REPO = "YOUR_GH_USER/YOUR_REPO"
+GITHUB_BRANCH = "main"
+SUB_PATH = "subs/all.txt"
+PUBLIC_BASE = ""
+SITE_URL = ""
+
+# Secrets (set with `wrangler secret put NAME`):
+#   TESTER_SECRET   shared HMAC secret between Worker and testers
+#   TELEGRAM_BOT_TOKEN
+#   TELEGRAM_CHAT_ID
+#   GITHUB_TOKEN    fine-grained PAT: contents:write + actions:write
+#   WORKFLOW_FILE   e.g. hourly.yml  (optional, for cron->Actions dispatch)

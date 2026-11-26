@@ -1,0 +1,40 @@
+name: probe-sources
+
+# Manual only. Run it from the Actions tab whenever the harvest looks thin:
+# it prints which sources still return links so you can prune sources.json.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Probe
+        working-directory: tester
+        run: python agent.py sources --json-out probe.json
+      - name: Summary
+        if: always()
+        working-directory: tester
+        run: |
+          python - <<PY
+          import json, os, pathlib
+          path = pathlib.Path("probe.json")
+          target = pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"])
+          if not path.exists():
+              target.write_text("probe failed\n", encoding="utf-8")
+          else:
+              rows = json.loads(path.read_text(encoding="utf-8"))
+              rows.sort(key=lambda item: -int(item.get("links") or 0))
+              lines = ["### source health", "", "| target | status | links |", "| --- | --- | --- |"]
+              for row in rows:
+                  lines.append("| " + str(row.get("target")) + " | " + str(row.get("status")) + " | " + str(row.get("links")) + " |")
+              target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY

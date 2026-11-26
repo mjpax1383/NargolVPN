@@ -1,0 +1,6 @@
+# Copy to .dev.vars for `wrangler dev`. NEVER commit the real file.
+TESTER_SECRET=change-me-please
+TELEGRAM_BOT_TOKEN=123456:AA...
+TELEGRAM_CHAT_ID=@your_channel
+GITHUB_TOKEN=github_pat_...
+WORKFLOW_FILE=hourly.yml

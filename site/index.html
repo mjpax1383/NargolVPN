@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>vpnbot · کانفیگ‌های تست‌شده</title>
+  <meta name="description" content="لیست زندهٔ کانفیگ‌های v2ray که همین حالا تست شده‌اند.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="wrap">
+    <div class="brand">
+      <span class="dot" id="live-dot"></span>
+      <h1>vpnbot</h1>
+      <span class="tagline">کانفیگ‌های تست‌شده، هر ساعت تازه</span>
+    </div>
+    <p class="meta" id="meta">در حال بارگذاری…</p>
+  </header>
+
+  <main class="wrap">
+    <section class="stats" id="stats" hidden>
+      <div class="stat"><b id="stat-alive">0</b><span>سالم</span></div>
+      <div class="stat"><b id="stat-ir">0</b><span>سازگار با ایران</span></div>
+      <div class="stat"><b id="stat-fast">0</b><span>زیر ۴۰۰ms</span></div>
+      <div class="stat"><b id="stat-proto">0</b><span>پروتکل متفاوت</span></div>
+    </section>
+
+    <section class="subs" id="subs" hidden>
+      <button class="sub" data-copy="__GLOBAL__"><span>🌍 ساب جهانی</span><em>کپی لینک</em></button>
+      <button class="sub" data-copy="__IR__"><span>🇮🇷 ساب ایران</span><em>کپی لینک</em></button>
+      <button class="sub" data-copy="__ALL__"><span>📦 ساب کامل</span><em>کپی لینک</em></button>
+    </section>
+
+    <section class="controls">
+      <input id="search" type="search" placeholder="جست‌وجوی هاست…" autocomplete="off">
+      <div class="chips" id="proto-filters">
+        <button class="chip active" data-proto="all">همه</button>
+        <button class="chip" data-proto="vless">VLESS</button>
+        <button class="chip" data-proto="vmess">VMess</button>
+        <button class="chip" data-proto="trojan">Trojan</button>
+        <button class="chip" data-proto="ss">SS</button>
+      </div>
+      <label class="toggle"><input type="checkbox" id="only-ir"> فقط سازگار با ایران</label>
+    </section>
+
+    <section id="list" class="list"></section>
+    <p id="empty" class="empty" hidden>هنوز داده‌ای منتشر نشده. اولین اجرای تستر ممکن است چند دقیقه طول بکشد.</p>
+  </main>
+
+  <footer class="wrap">
+    <p>هر کانفیگ با اتصال واقعی (Xray) تست می‌شود، نه با پینگ ساده. اعداد = زمان کل درخواست از نقطهٔ تست.</p>
+  </footer>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

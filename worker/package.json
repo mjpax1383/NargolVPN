@@ -1,0 +1,18 @@
+{
+  "name": "vpnbot-worker",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Free-tier brain for the proxy-digest bot: storage, scoring, subscription mirrors and Telegram delivery.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "db:migrate:local": "wrangler d1 migrations apply vpnbot --local",
+    "db:migrate": "wrangler d1 migrations apply vpnbot --remote",
+    "db:check": "wrangler d1 execute vpnbot --remote --command \"SELECT COUNT(*) AS total, SUM(works_global) AS alive_global, SUM(works_ir) AS alive_ir FROM configs\""
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
