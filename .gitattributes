@@ -1,0 +1,5 @@
+# Keep LF everywhere: GitHub Actions (bash), Termux and Cloudflare all assume it.
+* text=auto eol=lf
+*.png binary
+*.zip binary
+*.exe binary
