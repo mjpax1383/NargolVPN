@@ -241,10 +241,29 @@ def run_tests(configs: list, xray_bin: str, workers: int, timeout: float, tries:
     return results
 
 
+def fetch_state(wc: WorkerClient, pages: int = 2, page_size: int = 300) -> list:
+    """Alive configs, best score first.
+
+    The Worker clamps one page to 300 rows, so the pool is read in pages: the mix
+    and country caps need spares from below the top 300 to fill a subscription.
+    """
+    rows, seen_ids = [], set()
+    for page in range(max(1, pages)):
+        chunk = wc.get("/api/state?limit=%d&offset=%d" % (page_size, page * page_size)).get("configs") or []
+        for row in chunk:
+            config_id = row.get("id")
+            if config_id and config_id in seen_ids:
+                continue
+            seen_ids.add(config_id)
+            rows.append(row)
+        if len(chunk) < page_size:
+            break
+    return rows
+
+
 def build_items(wc: WorkerClient) -> list:
-    state = wc.get("/api/state?limit=300")
     items = []
-    for row in state.get("configs", []):
+    for row in fetch_state(wc):
         items.append({
             "id": row.get("id"),
             "uri": row.get("uri"),
@@ -405,7 +424,7 @@ def run_once(args) -> dict:
         alive_rows = []
         if wc.base:
             try:
-                alive_rows = wc.get("/api/state?limit=300").get("configs") or []
+                alive_rows = fetch_state(wc)
             except Exception as error:  # noqa: BLE001
                 log("state fetch failed, continuing cold: " + str(error))
         configs, fresh_count = pick_candidates(found, alive_rows, seen, args.max_new, args.max_retest)
