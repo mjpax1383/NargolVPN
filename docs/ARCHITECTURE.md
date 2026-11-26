@@ -66,7 +66,7 @@ X-Sig = hex( HMAC-SHA256( secret, X-Ts + "." + rawBody ) )
 | `GET /health` | شمارش‌ها، وضعیت ساب‌ها، آخرین dispatch/post |
 | `GET /api/info` | آدرس پایه و لینک سه ساب |
 | `GET /api/configs` | JSON برای سایت (top 60) |
-| `GET /sub/all` \| `/sub/global` \| `/sub/ir` | فایل base64 استاندارد ساب |
+| `GET /sub/all` \| `/sub/global` \| `/sub/ir` | فایل base64 استاندارد ساب — مگر اینکه درخواست از مرورگر باشد (`Sec-Fetch-Mode: navigate` یا UA مرورگر)، که آن‌وقت صفحهٔ HTML برمی‌گردد. `?format=raw` یا `?format=html` این را مجبور می‌کند. عمداً edge-cache نمی‌شود چون کلید کش فقط URL است. |
 | `GET /sub/<name>/plain` | همان، بدون base64 |
 
 ## ۵. مسیرهای امضاشده

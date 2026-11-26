@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from typing import Iterable
+from urllib.parse import quote
 
 from uri import b64encode_text, Config
 
@@ -19,6 +20,22 @@ def score_of(result: dict, works_ir: bool = False) -> float:
     speed = max(0.0, min(1.0, 1.0 - latency / MAX_LATENCY_MS))
     value = 0.55 * success + 0.40 * speed + (0.05 if works_ir else 0.0)
     return round(min(1.0, value), 4)
+
+
+BRAND = "NargolVPN"
+
+
+def brand_uri(uri: str, cid: str = "") -> str:
+    """Name every config NargolVPN|<digits>. The number is derived from the config id,
+    so it looks random but never changes between runs (clients keep their entry)."""
+    text = str(uri or "").strip()
+    if not text:
+        return text
+    try:
+        number = int(str(cid or "")[:8], 16) % 9000 + 1000
+    except ValueError:
+        number = sum(ord(ch) for ch in text) % 9000 + 1000
+    return text.split("#", 1)[0] + "#" + quote(BRAND + "|" + str(number), safe="|")
 
 
 def armour(uris: Iterable[str]) -> dict:
@@ -78,7 +95,7 @@ def top_payload(items: list, limit: int = 40) -> list:
     for item in items[:limit]:
         out.append({
             "id": item.get("id"),
-            "uri": item.get("uri"),
+            "uri": brand_uri(item.get("uri"), item.get("id")),
             "proto": item.get("proto"),
             "host": item.get("host"),
             "port": item.get("port"),

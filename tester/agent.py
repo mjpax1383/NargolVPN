@@ -266,10 +266,13 @@ def publish(wc: WorkerClient, stats: dict, dry_run: bool) -> dict:
     global_sel = scoring.select(items, 40, lambda item: item["works_global"])
     ir_sel = scoring.select(items, 40, lambda item: item["works_ir"])
     all_sel = scoring.select(items, 50, lambda item: True)
+    def tagged(selection):
+        return [scoring.brand_uri(item["uri"], item.get("id")) for item in selection]
+
     subs = {
-        "global": scoring.armour([item["uri"] for item in global_sel]),
-        "ir": scoring.armour([item["uri"] for item in ir_sel]),
-        "all": scoring.armour([item["uri"] for item in all_sel]),
+        "global": scoring.armour(tagged(global_sel)),
+        "ir": scoring.armour(tagged(ir_sel)),
+        "all": scoring.armour(tagged(all_sel)),
     }
     stats = dict(stats)
     stats["ir"] = len(ir_sel)

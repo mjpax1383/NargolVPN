@@ -17,6 +17,7 @@ import {
   upsertResults,
 } from "./store.js";
 import { buildDigest, commitFile, dispatchWorkflow, publicBase, pushSubsToGithub, replyMarkup, sendTelegram, subUrl } from "./publish.js";
+import { renderSubPage, wantsHtml } from "./subpage.js";
 
 const SUB_NAMES = new Set(["ir", "global", "all"]);
 
@@ -28,7 +29,7 @@ export default {
       if (request.method === "OPTIONS") return corsPreflight();
       if (path === "/") return landing(env, url);
       if (path === "/health") return json(await health(env));
-      if (path.startsWith("/sub/")) return serveSub(env, path);
+      if (path.startsWith("/sub/")) return serveSub(env, request, path);
       if (path === "/api/configs") return apiConfigs(env);
       if (path === "/api/info") return apiInfo(env, url);
       if (path === "/api/state") return auth(request, env, () => apiState(env, url));
@@ -71,17 +72,28 @@ async function auth(request, env, fn) {
   return fn(body);
 }
 
-async function serveSub(env, path) {
+// One URL, two audiences: browsers get a page, clients get the base64 file.
+async function serveSub(env, request, path) {
   const parts = path.split("/").filter(Boolean);
   const name = parts[1] || "all";
   const raw = parts[2] === "plain";
   if (!SUB_NAMES.has(name)) return json({ error: "unknown_sub" }, 404);
   const row = await getSub(env, name);
   if (!row) return text("", "text/plain; charset=utf-8", "no-store");
-  const response = raw
-    ? text(row.plain || "", "text/plain; charset=utf-8", "public, max-age=120")
-    : text(row.body || "", "text/plain; charset=utf-8", "public, max-age=300");
-  return edgeCached(response, raw ? 120 : 300);
+  const plain = String(row.plain || "");
+  if (raw) return text(plain, "text/plain; charset=utf-8", "public, max-age=120");
+  if (wantsHtml(request)) {
+    const page = renderSubPage({
+      name,
+      plain,
+      updatedAt: row.updated_at,
+      base: publicBase(env, new URL(request.url).origin),
+      site: env.SITE_URL || "",
+    });
+    return text(page, "text/html; charset=utf-8", "no-store");
+  }
+  // Never edge-cache this: the cache key is the URL, and the same URL serves HTML to browsers.
+  return text(String(row.body || ""), "text/plain; charset=utf-8", "public, max-age=300");
 }
 
 async function apiConfigs(env) {
