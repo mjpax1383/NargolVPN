@@ -37,9 +37,13 @@ function chunkButtons(env, origin, family, total, icon, label) {
 export function replyMarkup(env, origin, chunks) {
   const global = Math.max(1, Math.min(9, Number((chunks && chunks.global) || 1)));
   const ir = Math.max(0, Math.min(9, Number((chunks && chunks.ir) || 0)));
-  const rows = chunkButtons(env, origin, "global", global, "🌍", "ساب جهانی");
-  // The Iranian mirror only exists once a vantage point inside Iran has run.
-  if (ir > 0) rows.push(...chunkButtons(env, origin, "ir", ir, "🇮🇷", "ساب ایران"));
+  // First row is always the whole family on one link; the chunks follow underneath.
+  const rows = [[{ text: "🌍 همه سرورها (یک لینک)", url: subUrl(env, origin, "global") }]];
+  if (global > 1) rows.push(...chunkButtons(env, origin, "global", global, "🌍", "ساب جهانی"));
+  if (ir > 0) {
+    rows.push([{ text: "🇮🇷 همه سرورهای ساب ایران", url: subUrl(env, origin, "ir") }]);
+    if (ir > 1) rows.push(...chunkButtons(env, origin, "ir", ir, "🇮🇷", "ساب ایران"));
+  }
   const site = (env.SITE_URL || "").trim();
   if (site) rows.push([{ text: "📊 لیست زنده و وضعیت", url: site }]);
   return { inline_keyboard: rows.length ? rows : chunkButtons(env, origin, "global", 1, "🌍", "ساب جهانی") };
@@ -139,13 +143,16 @@ export async function pushSubsToGithub(env, subs) {
     const chunks = Object.keys(subs || {})
       .filter((name) => new RegExp("^" + family + "\\d+$").test(name))
       .sort((a, b) => Number(a.slice(family.length)) - Number(b.slice(family.length)));
-    if (!chunks.length) continue;
-    const plain = chunks
+    // The bare family name already holds every config, so prefer it over stitching
+    // the chunks (which would repeat the "last updated" line once per chunk).
+    const whole = subs && subs[family];
+    const stitched = chunks
       .map((name) => String((subs[name] && subs[name].plain) || ""))
       .join("\n")
       .split("\n")
       .filter(Boolean)
       .join("\n");
+    const plain = whole && typeof whole.plain === "string" && whole.plain ? whole.plain : stitched;
     if (!plain) continue;
     results[family] = await commitFile(
       env,
@@ -164,18 +171,17 @@ export function buildDigest(input) {
   lines.push("🔄 <b>بروزرسانی ساعتی کانفیگ‌ها</b>");
   lines.push("");
   lines.push("🧪 تست‌شده: " + fmt(stats.tested) + " · ✅ سالم: " + fmt(stats.alive) + " · 🇮🇷 سازگار با ایران: " + fmt(stats.ir));
+  const irLabel = stats.ir_mode === "tested" ? "🇮🇷 ساب ایران" : "🇮🇷 پیشنهادی برای ایران";
   const families = [
-    ["🌍 ساب جهانی", Array.isArray(subs.global) ? subs.global : [subs.global]],
-    ["🇮🇷 ساب ایران", Number(stats.ir) > 0 ? (Array.isArray(subs.ir) ? subs.ir : [subs.ir]) : []],
+    ["🌍 ساب جهانی (همه سرورها)", Array.isArray(subs.global) ? subs.global : [subs.global]],
+    [irLabel, Number(stats.ir) > 0 ? (Array.isArray(subs.ir) ? subs.ir : [subs.ir]) : []],
   ];
   for (const [label, urls] of families) {
     const list = (urls || []).filter(Boolean);
     if (!list.length) continue;
-    if (list.length === 1) lines.push(label + ": <code>" + list[0] + "</code>");
-    else {
-      lines.push(label + " (" + list.length + " بخش):");
-      list.forEach((url, index) => lines.push((index + 1) + ". <code>" + url + "</code>"));
-    }
+    // Index 0 is the whole family, the rest are the 50-config chunks.
+    lines.push(label + ": <code>" + list[0] + "</code>");
+    list.slice(1).forEach((url, index) => lines.push("   ▸ بخش " + (index + 1) + ": <code>" + url + "</code>"));
   }
   lines.push("");
   if (best.length) {

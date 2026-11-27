@@ -101,6 +101,13 @@ async function serveSub(env, request, path) {
       })
       .sort((a, b) => familyOf(a.name).index - familyOf(b.name).index)
       .map((item) => ({ name: item.name, count: Number(item.count || 0), index: familyOf(item.name).index }));
+    // The bare name (/sub/global) carries the whole family; chunks carry 50 each.
+    const whole = family ? all.find((item) => item.name === family.family) : null;
+    // The Iran list is shape-based until a tester inside Iran has really run.
+    let note = "";
+    if (family && family.family === "ir" && (await getMeta(env, "ir_mode", "tested")) !== "tested") {
+      note = "این لیست پیشنهادی است: کانفیگ‌هایی با TLS/Reality و روش‌های CDN انتخاب شده‌اند تا احتمال عبور از فیلتر بیشتر باشد. تست واقعی از داخل ایران هنوز انجام نشده.";
+    }
     const page = renderSubPage({
       name,
       plain,
@@ -109,6 +116,9 @@ async function serveSub(env, request, path) {
       site: env.SITE_URL || "",
       siblings,
       index: family ? family.index : 1,
+      fullName: family ? family.family : name,
+      total: Number((whole && whole.count) || row.count || 0),
+      note,
     });
     return text(page, "text/html; charset=utf-8", "no-store");
   }
@@ -214,6 +224,8 @@ async function apiPublish(env, body, url) {
     await setTop(env, { generated_at: nowSec(), items: body.top.slice(0, 60) });
   }
 
+  await setMeta(env, "ir_mode", String((body.stats && body.stats.ir_mode) || "tested"));
+
   const now = nowSec();
   const lastPost = Number(await getMeta(env, "last_post", "0")) || 0;
   const cooldown = Number(env.POST_COOLDOWN_MIN || 55) * 60;
@@ -227,8 +239,14 @@ async function apiPublish(env, body, url) {
         stats: body.stats || {},
         best: body.best || [],
         subs: {
-          global: Array.from({ length: chunks.global }, (_, index) => subUrl(env, origin, "global" + (index + 1))),
-          ir: Array.from({ length: chunks.ir }, (_, index) => subUrl(env, origin, "ir" + (index + 1))),
+          global: [subUrl(env, origin, "global")].concat(
+            Array.from({ length: chunks.global }, (_, index) => subUrl(env, origin, "global" + (index + 1))),
+          ),
+          ir: chunks.ir > 0
+            ? [subUrl(env, origin, "ir")].concat(
+                Array.from({ length: chunks.ir }, (_, index) => subUrl(env, origin, "ir" + (index + 1))),
+              )
+            : [],
         },
         generated_at: now,
       });
@@ -300,9 +318,9 @@ main{max-width:640px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}p{color:#9aa
 a.card{display:block;background:#14171c;border:1px solid #232830;border-radius:14px;padding:16px 18px;margin-bottom:10px;text-decoration:none;color:#e8eaed}
 a.card span{display:block;color:#9aa0a6;font-size:12px;direction:ltr;text-align:left;margin-top:4px}
 </style></head><body><main><h1>vpnbot</h1><p>کانفیگ‌های تست‌شده، هر ساعت تازه.</p>
-<a class="card" href="/sub/all">سابسکریپشن کامل<span>${base}/sub/all</span></a>
-<a class="card" href="/sub/global">ساب جهانی<span>${base}/sub/global</span></a>
-<a class="card" href="/sub/ir">ساب سازگار با ایران<span>${base}/sub/ir</span></a>
+<a class="card" href="/sub/global">همه سرورها (یک لینک)<span>${base}/sub/global</span></a>
+<a class="card" href="/sub/ir">ساب پیشنهادی برای ایران<span>${base}/sub/ir</span></a>
+<a class="card" href="/sub/all">سابسکریپشن کامل (هر چیزی که سالم است)<span>${base}/sub/all</span></a>
 <a class="card" href="/api/configs">API زنده<span>${base}/api/configs</span></a>
 <a class="card" href="/health">وضعیت سرویس<span>${base}/health</span></a>
 </main></body></html>`;

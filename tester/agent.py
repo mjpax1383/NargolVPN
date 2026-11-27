@@ -33,7 +33,9 @@ import collect as collector  # noqa: E402
 import geo as geo_mod  # noqa: E402
 import score as scoring  # noqa: E402
 import xray as xray_mod  # noqa: E402
-from uri import Config, parse_uri  # noqa: E402
+import urllib.parse  # noqa: E402
+
+from uri import Config, b64decode_loose, parse_uri  # noqa: E402
 
 VERSION = "1.0.0"
 # Subscription split: more than this many configs per family opens /sub/global2, ...
@@ -317,13 +319,26 @@ def publish(wc: WorkerClient, stats: dict, dry_run: bool) -> dict:
     base = (info.get("base") or wc.base).rstrip("/")
     items = build_items(wc)
     # Caps keep the publish payload small enough for the Worker free plan (10ms CPU).
+    # The IR family is real when an Iranian tester has fed the database; otherwise it
+    # is a shape-based shortlist so the button is never dead.
+    ir_tested = any(item["works_ir"] for item in items)
+    if ir_tested:
+        ir_source, ir_predicate = items, (lambda item: item["works_ir"])
+    else:
+        for item in items:
+            item["ir_fit"] = scoring.iran_fit(item)
+        ir_source = [dict(item, score=item["ir_fit"]) for item in items]
+        ir_predicate = lambda item: item.get("ir_fit", 0) >= scoring.IRAN_FIT_MIN
     wanted = (
         ("global", 200, lambda item: item["works_global"]),
-        ("ir", 120, lambda item: item["works_ir"]),
+        ("ir", 120, ir_predicate),
         ("all", 200, lambda item: True),
     )
     # A wider pool first: the mix/country pass needs spare configs to choose from.
-    pools = {name: scoring.select(items, int(limit * POOL_FACTOR), predicate) for name, limit, predicate in wanted}
+    pools = {}
+    for name, limit, predicate in wanted:
+        source = ir_source if name == "ir" else items
+        pools[name] = scoring.select(source, int(limit * POOL_FACTOR), predicate)
     hosts = []
     for pool in pools.values():
         hosts.extend(item.get("host") for item in pool if item.get("host"))
@@ -354,23 +369,27 @@ def publish(wc: WorkerClient, stats: dict, dry_run: bool) -> dict:
 
     subs = {}
     families = {}
+    published_at = time.time()
+    status = scoring.status_uri(published_at)
     for family, selection in (("global", global_sel), ("ir", ir_sel), ("all", all_sel)):
         uris = tagged(selection)
-        groups = [uris[index:index + CHUNK_SIZE] for index in range(0, len(uris), CHUNK_SIZE)] or [[]]
+        if not uris:
+            continue
+        groups = [uris[index:index + CHUNK_SIZE] for index in range(0, len(uris), CHUNK_SIZE)]
         families[family] = len(groups)
         for number, group in enumerate(groups, start=1):
-            subs[family + str(number)] = scoring.armour(group)
-        # Alias: /sub/global keeps working and always means chunk one.
-        subs[family] = subs[family + "1"]
+            subs[family + str(number)] = scoring.armour(group, header=status)
+        # The bare name is the whole family; /sub/global1, /sub/global2 are the chunks.
+        subs[family] = scoring.armour(uris, header=status)
 
     stats = dict(stats)
     stats["ir"] = len(ir_sel)
+    stats["ir_mode"] = "tested" if ir_tested else "heuristic"
     stats["alive"] = len(global_sel)
     stats["protos"] = scoring.protocol_mix(global_sel)
     stats["countries"] = len({codes[host] for host in (str(item.get("host") or "").lower() for item in global_sel) if codes.get(host)})
-    # Only advertise the Iranian mirror once a vantage point inside Iran has fed it.
-    ir_urls = [base + "/sub/ir" + str(n) for n in range(1, families["ir"] + 1)] if ir_sel else []
-    global_urls = [base + "/sub/global" + str(n) for n in range(1, families["global"] + 1)]
+    ir_urls = ([base + "/sub/ir"] + [base + "/sub/ir" + str(n) for n in range(1, families.get("ir", 0) + 1)]) if ir_sel else []
+    global_urls = [base + "/sub/global"] + [base + "/sub/global" + str(n) for n in range(1, families["global"] + 1)]
     digest = scoring.build_digest(
         stats,
         global_sel,
@@ -531,6 +550,27 @@ def cmd_selftest(args) -> int:
         print("ok  " + cfg.label() + " id=" + cfg.id[:12] + " net=" + cfg.network + " sec=" + (cfg.security or "none"))
     duplicate = parse_uri(SAMPLES[0])
     assert duplicate is not None and duplicate.id == parse_uri(SAMPLES[0]).id
+
+    # Subscription assembly: the status line must never count as a server, and the
+    # digest must offer the whole family on one link before the chunks.
+    header = scoring.status_uri(1795700000)
+    assert header.startswith("trojan://") and "127.0.0.1:1" in header, header
+    assert "2026-11-26" in urllib.parse.unquote(header.split("#", 1)[1]), header
+    packed = scoring.armour([SAMPLES[0], SAMPLES[2]], header=header)
+    assert packed["count"] == 2, packed["count"]
+    assert packed["plain"].split("\n")[0] == header, packed["plain"][:80]
+    assert b64decode_loose(packed["body"]).decode("utf-8").startswith(header)
+    fit_reality = scoring.iran_fit({"uri": SAMPLES[0]})
+    fit_ss = scoring.iran_fit({"uri": SAMPLES[2]})
+    assert fit_reality > 0.8 and fit_ss < 0.1, (fit_reality, fit_ss)
+    digest = scoring.build_digest(
+        {"alive": 3, "ir": 1, "ir_mode": "heuristic"},
+        [],
+        {"global": ["https://x/sub/global", "https://x/sub/global1"], "ir": ["https://x/sub/ir"]},
+        1795700000,
+    )
+    assert "پیشنهادی برای ایران" in digest, digest
+    assert digest.index("https://x/sub/global</code>") < digest.index("global1"), digest
     if args.worker:
         wc = WorkerClient(args.worker, args.secret)
         health = wc.get("/health", signed=False)

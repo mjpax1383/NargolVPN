@@ -91,15 +91,22 @@
       if (family === "ir" && !hasIr) return;
       const list = chunks[family] && chunks[family].length
         ? chunks[family]
-        : [{ index: 1, url: base + "/sub/" + family }];
-      list.forEach((chunk) => {
+        : [{ index: 1, url: base + "/sub/" + family, count: 0 }];
+      const whole = info[family] || {};
+      const total = Number(whole.count || 0) || list.reduce((sum, chunk) => sum + chunk.count, 0);
+      // One link for the whole family, then the 50-config chunks when they exist.
+      const buttons = [{ index: 0, url: whole.url || base + "/sub/" + family, count: total }];
+      if (list.length > 1) buttons.push(...list);
+      buttons.forEach((chunk) => {
         const button = document.createElement("button");
         button.className = "sub";
         const label = document.createElement("span");
-        label.textContent = FAMILY_ICON[family] + " " + FAMILY_NAME[family] +
-          (list.length > 1 ? " · بخش " + chunk.index + " از " + list.length : "");
+        const suffix = chunk.count ? " (" + chunk.count + ")" : "";
+        label.textContent = chunk.index === 0
+          ? FAMILY_ICON[family] + " " + FAMILY_NAME[family] + " · همه" + suffix
+          : FAMILY_ICON[family] + " " + FAMILY_NAME[family] + " · بخش " + chunk.index + " از " + list.length + suffix;
         const hint = document.createElement("em");
-        hint.textContent = "کپی لینک";
+        hint.textContent = chunk.index === 0 ? "کپی لینک کامل" : "کپی لینک";
         button.append(label, hint);
         button.addEventListener("click", () => copyText(chunk.url));
         host.append(button);

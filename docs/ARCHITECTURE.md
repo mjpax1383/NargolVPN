@@ -70,7 +70,7 @@ X-Sig = hex( HMAC-SHA256( secret, X-Ts + "." + rawBody ) )
 | `GET /api/configs` | JSON برای سایت (top 60) |
 | `GET /sub/all` \| `/sub/global` \| `/sub/ir` | فایل base64 استاندارد ساب — مگر اینکه درخواست از مرورگر باشد (`Sec-Fetch-Mode: navigate` یا UA مرورگر)، که آن‌وقت صفحهٔ HTML برمی‌گردد. `?format=raw` یا `?format=html` این را مجبور می‌کند. عمداً edge-cache نمی‌شود چون کلید کش فقط URL است. |
 | `GET /sub/<name>/plain` | همان، بدون base64 |
-| `GET /sub/global2` … | بخش‌های بعدی یک خانواده؛ نام با `^(all\|global\|ir)[1-9]?\d?$` اعتبارسنجی می‌شود و بخش ناموجود ۴۰۴ می‌دهد. `/sub/global` همیشه alias بخش اول است. |
+| `GET /sub/global1` … | بخش‌های ۵۰تاییِ یک خانواده؛ نام با `^(all\|global\|ir)[1-9]?\d?$` اعتبارسنجی می‌شود و بخش ناموجود ۴۰۴ می‌دهد. نام بدون شماره همیشه کل خانواده است، چانک‌ها تقسیم همان لیست. |
 
 ## ۵. مسیرهای امضاشده
 
@@ -109,9 +109,11 @@ X-Sig = hex( HMAC-SHA256( secret, X-Ts + "." + rawBody ) )
 
 ```json
 {
-  "global": { "body": "<base64>", "plain": "vless://...\nvless://...", "count": 40 },
-  "ir":     { "body": "...", "plain": "...", "count": 25 },
-  "all":    { "body": "...", "plain": "...", "count": 50 }
+  "global":  { "body": "<base64>", "plain": "trojan://...127.0.0.1:1#⏱...\nvless://...", "count": 200 },
+  "global1": { "body": "...", "plain": "⏱ + 50 کانفیگ", "count": 50 },
+  "global2": { "body": "...", "plain": "⏱ + 50 کانفیگ", "count": 50 },
+  "ir":      { "body": "...", "plain": "...", "count": 120 },
+  "all":     { "body": "...", "plain": "...", "count": 200 }
 }
 ```
 

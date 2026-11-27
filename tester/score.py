@@ -1,11 +1,12 @@
 """Scoring, subscription assembly and the Telegram digest."""
 from __future__ import annotations
 
+import re
 import time
 from typing import Iterable
 from urllib.parse import quote
 
-from uri import b64encode_text, Config
+from uri import b64encode_text, Config, parse_uri
 
 MAX_LATENCY_MS = 2500.0
 
@@ -41,9 +42,69 @@ def brand_uri(uri: str, cid: str = "", marker: str = "") -> str:
     return text.split("#", 1)[0] + "#" + quote(tag, safe="|")
 
 
-def armour(uris: Iterable[str]) -> dict:
-    plain = "\n".join([uri for uri in uris if uri])
-    return {"body": b64encode_text(plain), "plain": plain, "count": len([u for u in uris if u])}
+def armour(uris: Iterable[str], header: str = "") -> dict:
+    """Base64 body + plain text. ``header`` is an optional extra first line
+    (the "last updated" entry); it never counts as a server."""
+    items = [uri for uri in uris if uri]
+    lines = ([header] if header else []) + items
+    plain = "\n".join(lines)
+    return {"body": b64encode_text(plain), "plain": plain, "count": len(items)}
+
+
+STATUS_FLAG = "⏱"
+
+
+def status_uri(generated_at: float) -> str:
+    """A fake-but-valid entry that shows up as the first server in every client.
+
+    It never connects (127.0.0.1:1); its only job is to carry the publish time so a
+    reader can see how fresh the subscription is without opening the site.
+    """
+    stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(generated_at))
+    name = BRAND + " | " + STATUS_FLAG + " " + stamp
+    return ("trojan://00000000-0000-0000-0000-000000000000@127.0.0.1:1"
+            "?security=tls&sni=localhost&type=tcp#" + quote(name, safe="|"))
+
+
+IP_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+
+# Ports that survive Iranian filtering best: TLS on 443 and the CDN-friendly set.
+IRAN_PORTS = {443, 8443, 2053, 2083, 2087, 2096, 8880, 8080}
+IRAN_NETWORKS = {"ws", "grpc", "xhttp", "httpupgrade", "h2", "http"}
+IRAN_FIT_MIN = 0.55
+
+
+def iran_fit(item: dict) -> float:
+    """Rough chance a config works from Iran, used only when we have no real IR test.
+
+    This is a shape score, not a measurement: TLS/Reality on a CDN port with a real
+    domain as SNI (and a websocket/gRPC transport) is what usually survives. Shadowsocks
+    has no TLS layer, so it scores near zero on purpose.
+    """
+    try:
+        cfg = parse_uri(str(item.get("uri") or ""))
+    except Exception:
+        return 0.0
+    if cfg is None:
+        return 0.0
+    if cfg.proto == "ss":
+        return 0.05
+    fit = 0.25
+    security = (cfg.security or "").lower()
+    if security == "reality":
+        fit += 0.35
+    elif security in ("tls", "xtls"):
+        fit += 0.25
+    if (cfg.network or "").lower() in IRAN_NETWORKS:
+        fit += 0.15
+    if int(cfg.port or 0) in IRAN_PORTS:
+        fit += 0.15
+    sni = (cfg.sni or "").lower()
+    if sni and not IP_RE.match(sni):
+        fit += 0.10
+    if cfg.fingerprint:
+        fit += 0.05
+    return round(min(1.0, fit), 3)
 
 
 def select(items: list, limit: int, predicate) -> list:
@@ -64,10 +125,10 @@ def select(items: list, limit: int, predicate) -> list:
 
 # Share of a family each low-priority protocol may take. vless/vmess have no cap:
 # they are the protocols most clients handle best, so they fill the list first.
-PROTO_SHARE = {"ss": 0.22, "trojan": 0.30}
+PROTO_SHARE = {"ss": 0.15, "trojan": 0.20}
 # If those caps leave the list under 60% full, a second pass relaxes them a bit
 # instead of handing the reader a short subscription.
-PROTO_SHARE_RELAXED = {"ss": 0.35, "trojan": 0.40}
+PROTO_SHARE_RELAXED = {"ss": 0.28, "trojan": 0.32}
 
 
 def diversify(items: list, limit: int, codes: dict = None, per_country: int = 8, share: dict = None) -> list:
@@ -173,15 +234,14 @@ def build_digest(stats: dict, best: list, subs: dict, generated_at: float) -> st
         if int(stats.get("countries") or 0) > 0:
             line += " · 🌍 " + fmt(stats["countries"]) + " کشور"
         lines.append(line)
-    for label, urls in (("🌍 ساب جهانی", global_urls), ("🇮🇷 ساب ایران", ir_urls)):
+    ir_label = "🇮🇷 ساب ایران" if stats.get("ir_mode") == "tested" else "🇮🇷 پیشنهادی برای ایران"
+    for label, urls in (("🌍 ساب جهانی (همه سرورها)", global_urls), (ir_label, ir_urls)):
         if not urls:
             continue
-        if len(urls) == 1:
-            lines.append(label + ": <code>" + urls[0] + "</code>")
-            continue
-        lines.append(label + " (" + str(len(urls)) + " بخش):")
-        for index, url in enumerate(urls, start=1):
-            lines.append(str(index) + ". <code>" + url + "</code>")
+        # The first link is always the whole family; the rest are the 50-config chunks.
+        lines.append(label + ": <code>" + urls[0] + "</code>")
+        for index, url in enumerate(urls[1:], start=1):
+            lines.append("   ▸ بخش " + str(index) + ": <code>" + url + "</code>")
     if best:
         lines.append("")
         lines.append("<b>🏆 سریع‌ترین‌ها</b>")
