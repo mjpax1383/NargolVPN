@@ -33,20 +33,11 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
+    // The await matters: without it a rejected promise from a handler escapes the try
+    // block and Cloudflare answers with its opaque "Worker threw an exception" page
+    // (1101) instead of the real error message.
     try {
-      if (request.method === "OPTIONS") return corsPreflight();
-      if (path === "/") return landing(env, url);
-      if (path === "/health") return json(await health(env));
-      if (path.startsWith("/sub/")) return serveSub(env, request, path);
-      if (path === "/api/configs") return apiConfigs(env);
-      if (path === "/api/info") return apiInfo(env, url);
-      if (path === "/api/state") return auth(request, env, () => apiState(env, url));
-      if (path === "/api/claim") return auth(request, env, () => apiClaim(env, url));
-      if (path === "/api/ingest") return auth(request, env, (body) => apiIngest(env, body));
-      if (path === "/api/publish") return auth(request, env, (body) => apiPublish(env, body, url));
-      if (path === "/api/dispatch") return auth(request, env, () => apiDispatch(env));
-      if (path === "/api/probe") return auth(request, env, () => apiProbe(env, url));
-      return json({ error: "not_found", path }, 404);
+      return await route(request, env, url, path);
     } catch (err) {
       return json({ error: String((err && err.message) || err) }, 500);
     }
@@ -56,6 +47,22 @@ export default {
     ctx.waitUntil(tick(env));
   },
 };
+
+async function route(request, env, url, path) {
+  if (request.method === "OPTIONS") return corsPreflight();
+  if (path === "/") return landing(env, url);
+  if (path === "/health") return json(await health(env));
+  if (path.startsWith("/sub/")) return await serveSub(env, request, path);
+  if (path === "/api/configs") return await apiConfigs(env);
+  if (path === "/api/info") return await apiInfo(env, url);
+  if (path === "/api/state") return await auth(request, env, () => apiState(env, url));
+  if (path === "/api/claim") return await auth(request, env, () => apiClaim(env, url));
+  if (path === "/api/ingest") return await auth(request, env, (body) => apiIngest(env, body));
+  if (path === "/api/publish") return await auth(request, env, (body) => apiPublish(env, body, url));
+  if (path === "/api/dispatch") return await auth(request, env, () => apiDispatch(env));
+  if (path === "/api/probe") return await auth(request, env, () => apiProbe(env, url));
+  return json({ error: "not_found", path }, 404);
+}
 
 function corsPreflight() {
   return new Response(null, {
@@ -184,8 +191,16 @@ async function apiIngest(env, body) {
   const rawResults = Array.isArray(body.results) ? body.results.slice(0, cap) : [];
   const results = rawResults.map(sanitizeResult).filter(Boolean);
   if (!results.length) return json({ stored: 0, alive: 0, dropped: rawResults.length });
-  const stored = await upsertResults(env, vantage, runId, results);
   const alive = results.filter((r) => r.ok).length;
+  let stored = 0;
+  try {
+    stored = await upsertResults(env, vantage, runId, results);
+  } catch (err) {
+    // Keep the reason where a human can find it: the tester only ever sees the status code.
+    const message = String((err && err.message) || err).slice(0, 300);
+    await setMeta(env, "ingest_error", message + " @ " + runId).catch(() => {});
+    return json({ error: "ingest_failed", detail: message, stored: 0, alive }, 500);
+  }
   await insertRun(env, {
     run_id: runId,
     vantage,

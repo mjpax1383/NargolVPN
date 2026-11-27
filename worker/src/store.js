@@ -216,6 +216,7 @@ export async function health(env) {
     subs: (subs.results || []).reduce((acc, row) => { acc[row.name] = { count: row.count, updated_at: row.updated_at }; return acc; }, {}),
     last_dispatch: Number(await getMeta(env, "last_dispatch", "0")) || 0,
     last_post: Number(await getMeta(env, "last_post", "0")) || 0,
+    last_ingest_error: await getMeta(env, "ingest_error", ""),
   };
 }
 

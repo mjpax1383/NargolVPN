@@ -466,18 +466,28 @@ def run_once(args) -> dict:
         save_seen(args.state_dir, seen, args.seen_ttl)
     log("tested %d | alive %d" % (len(results), alive))
 
+    stored = 0
+    ingest_error = ""
     if args.dry_run:
         log("dry-run: skipping ingest/publish")
     else:
-        stored = ingest(wc, args.vantage, results, source_stats)
-        log("ingested %d results" % stored)
+        try:
+            stored = ingest(wc, args.vantage, results, source_stats)
+            log("ingested %d results" % stored)
+        except Exception as error:  # noqa: BLE001
+            # A rejected write must not take the hourly publish with it: the Worker still
+            # holds last hour's survivors, and the error is reported instead of hidden.
+            ingest_error = str(error)[:200]
+            log("ingest failed, publishing what the Worker already has: " + ingest_error)
         if args.vantage == "global" and args.publish:
             publish(wc, {"tested": len(results), "alive": alive}, False)
 
     summary.update({
-        "ok": True,
+        "ok": not ingest_error,
         "tested": len(results),
         "alive": alive,
+        "stored": stored,
+        "ingest_error": ingest_error,
         "sources_ok": source_stats.get("sources_ok", 0),
         "sources_fail": source_stats.get("sources_fail", 0),
         "seconds": round(time.time() - started, 1),
