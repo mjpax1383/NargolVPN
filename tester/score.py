@@ -78,7 +78,10 @@ def diversify(items: list, limit: int, codes: dict = None, per_country: int = 8,
     pool with only a few countries still fills up.
     """
     codes = codes or {}
-    caps = {proto: max(1, int(limit * factor)) for proto, factor in (PROTO_SHARE if share is None else share).items()}
+    # Caps follow the size we can actually deliver: with a thin pool a 22% share of
+    # the target would still be a big chunk of the real list.
+    target = min(limit, len(items))
+    caps = {proto: max(1, int(target * factor)) for proto, factor in (PROTO_SHARE if share is None else share).items()}
     counts: dict = {}
     countries: dict = {}
     chosen = []
@@ -115,6 +118,38 @@ def protocol_mix(items: list) -> dict:
         if proto:
             mix[proto] = mix.get(proto, 0) + 1
     return mix
+
+
+def interleave(items: list) -> list:
+    """Spread protocols through the list while keeping score order inside each one.
+
+    ``diversify`` hands back score order, so the fastest (usually Shadowsocks)
+    configs all land in chunk one and the first link looks monotone. Chunks are cut
+    from this ordering, so every section gets the same proportions as the whole family.
+    """
+    groups: dict = {}
+    for item in items:
+        key = str(item.get("proto") or "").strip().lower() or "?"
+        groups.setdefault(key, []).append(item)
+    if len(groups) < 2:
+        return list(items)
+    order = []
+    cursors = {key: 0 for key in groups}
+    # Smooth weighted round robin: gives every chunk the same proportions as the family.
+    weights = {key: len(bucket) for key, bucket in groups.items()}
+    total_weight = sum(weights.values())
+    current = {key: 0 for key in groups}
+    keys = list(groups)
+    for _ in range(len(items)):
+        best_key = keys[0]
+        for key in keys:
+            current[key] += weights[key]
+            if current[key] > current[best_key]:
+                best_key = key
+        order.append(groups[best_key][cursors[best_key]])
+        cursors[best_key] += 1
+        current[best_key] -= total_weight
+    return order
 
 
 def build_digest(stats: dict, best: list, subs: dict, generated_at: float) -> str:

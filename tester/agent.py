@@ -347,7 +347,7 @@ def publish(wc: WorkerClient, stats: dict, dry_run: bool) -> dict:
 
     def tagged(selection):
         out = []
-        for item in selection:
+        for item in scoring.interleave(selection):
             host = str(item.get("host") or "").strip().lower()
             out.append(scoring.brand_uri(item["uri"], item.get("id"), geo_mod.flag(codes.get(host, ""))))
         return out
