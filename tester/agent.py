@@ -468,6 +468,7 @@ def run_once(args) -> dict:
 
     stored = 0
     ingest_error = ""
+    publish_error = ""
     if args.dry_run:
         log("dry-run: skipping ingest/publish")
     else:
@@ -480,14 +481,20 @@ def run_once(args) -> dict:
             ingest_error = str(error)[:200]
             log("ingest failed, publishing what the Worker already has: " + ingest_error)
         if args.vantage == "global" and args.publish:
-            publish(wc, {"tested": len(results), "alive": alive}, False)
+            try:
+                publish(wc, {"tested": len(results), "alive": alive}, False)
+            except Exception as error:  # noqa: BLE001
+                # Same rule as the ingest: report it, do not blow up the run.
+                publish_error = str(error)[:200]
+                log("publish failed: " + publish_error)
 
     summary.update({
-        "ok": not ingest_error,
+        "ok": not (ingest_error or publish_error),
         "tested": len(results),
         "alive": alive,
         "stored": stored,
         "ingest_error": ingest_error,
+        "publish_error": publish_error,
         "sources_ok": source_stats.get("sources_ok", 0),
         "sources_fail": source_stats.get("sources_fail", 0),
         "seconds": round(time.time() - started, 1),
