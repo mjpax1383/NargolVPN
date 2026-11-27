@@ -312,17 +312,19 @@ function landing(env, url) {
   const html = `<!doctype html>
 <html lang="fa" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>vpnbot</title><style>
+<title>NargolVPN</title><style>
 body{font-family:system-ui,sans-serif;background:#0b0d10;color:#e8eaed;margin:0;padding:48px 20px;line-height:1.9}
 main{max-width:640px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}p{color:#9aa0a6;margin:0 0 24px}
 a.card{display:block;background:#14171c;border:1px solid #232830;border-radius:14px;padding:16px 18px;margin-bottom:10px;text-decoration:none;color:#e8eaed}
 a.card span{display:block;color:#9aa0a6;font-size:12px;direction:ltr;text-align:left;margin-top:4px}
-</style></head><body><main><h1>vpnbot</h1><p>کانفیگ‌های تست‌شده، هر ساعت تازه.</p>
+p.hint{font-size:12px;color:#6f7680;margin:6px 0 0}
+</style></head><body><main><h1>NargolVPN</h1><p>کانفیگ‌های تست‌شده، هر ساعت تازه.</p>
 <a class="card" href="/sub/global">همه سرورها (یک لینک)<span>${base}/sub/global</span></a>
 <a class="card" href="/sub/ir">ساب پیشنهادی برای ایران<span>${base}/sub/ir</span></a>
 <a class="card" href="/sub/all">سابسکریپشن کامل (هر چیزی که سالم است)<span>${base}/sub/all</span></a>
 <a class="card" href="/api/configs">API زنده<span>${base}/api/configs</span></a>
 <a class="card" href="/health">وضعیت سرویس<span>${base}/health</span></a>
+<p class="hint">هر خانوادهٔ ساب ۵۰تایی هم تقسیم شده: <code>/sub/global1</code> … <code>/sub/global4</code> و مثل آن برای <code>ir</code>.</p>
 </main></body></html>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
