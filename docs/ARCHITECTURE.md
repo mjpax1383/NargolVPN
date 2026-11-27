@@ -131,19 +131,26 @@ id = sha256( proto | lower(host) | port | secret | network | path | lower(sni) )
 
 | جدول | نقش |
 | --- | --- |
-| `configs` | یک ردیف برای هر کانفیگ یکتا: وضعیت، score، streak، آخرین موفقیت |
-| `attempts` | تاریخچهٔ هر تلاش (برای دیباگ)، ۷ روز نگه داشته می‌شود |
-| `subs` | بدنهٔ سه ساب |
+| `configs` | فقط کانفیگ‌هایی که **حداقل یک‌بار** کار کرده‌اند: وضعیت، score، streak، آخرین موفقیت |
+| `subs` | بدنهٔ ساب‌ها (کل یک خانواده + هر بخش) |
 | `top` | ۶۰ مورد برتر برای سایت |
-| `runs` | خلاصهٔ هر اجرای تستر |
-| `meta` | `last_dispatch`، `last_post` و ... |
+| `runs` | خلاصهٔ هر اجرای تستر (جای `attempts` حذف‌شده) |
+| `meta` | `last_dispatch`، `last_post`، `last_prune` و ... |
+
+**چرا `attempts` حذف شد:** تاریخچهٔ تک‌تک تلاش‌ها هیچ‌جا خوانده نمی‌شد، ولی هر ردیفش ۳ ردیف نوشته‌شده
+(خود ردیف + ایندکس کلید + ایندکس `ts`) هزینه داشت. خلاصهٔ هر اجرا در `runs` هست و جزئیات را
+می‌شود از `wrangler tail` و خلاصهٔ GitHub Actions گرفت.
+
+**چرا کانفیگ مرده ذخیره نمی‌شود:** D1 برای هر ردیف نوشته‌شده در ایندکس‌ها هم ردیف می‌شمارد، پس یک
+«سنگ‌قبر» برای کانفیگی که هرگز کار نکرده ۴ ردیف هزینه داشت و هیچ کوئری‌ای آن را نمی‌خواند. حالا نتیجهٔ
+ناموفق فقط یک `UPDATE ... WHERE id = ?` است که اگر ردیفی نباشد صفر ردیف می‌نویسد.
 
 ### منطق streak (داخل SQL، نه در کد)
 
 ```sql
 ok_streak   = CASE WHEN excluded.last_ok_at IS NOT NULL THEN ok_streak + 1 ELSE 0 END
 fail_streak = CASE WHEN excluded.last_ok_at IS NOT NULL THEN 0 ELSE fail_streak + 1 END
-works_global = CASE WHEN fail_streak + 1 >= 2 THEN 0 ELSE 1 END
+works_global = excluded.works_global   -- همان نتیجهٔ همین تست
 ```
 
 یعنی:

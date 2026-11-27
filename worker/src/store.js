@@ -39,7 +39,12 @@ const SQL_IR = [
   "  score = MAX(configs.score, excluded.score)",
 ].join(" ");
 
-const SQL_ATTEMPT = "INSERT OR REPLACE INTO attempts (config_id, vantage, run_id, ts, ok, ok_count, tries, latency_ms, err) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+// A config that has never worked is not stored at all: no reader wants it, and a
+// tombstone row costs a table write plus an index write today and every time the same
+// config is probed again. When a probe fails we only need to retire a row that already
+// exists (a former survivor), which a no-match UPDATE does for free.
+const SQL_GLOBAL_DEAD = "UPDATE configs SET works_global = 0, fail_streak = fail_streak + 1, last_seen = ? WHERE id = ?";
+const SQL_IR_DEAD = "UPDATE configs SET works_ir = 0, last_ir_at = ?, last_seen = ? WHERE id = ?";
 
 function clampInt(value, min, max, fallback) {
   const n = Number(value);
@@ -81,19 +86,19 @@ export async function upsertResults(env, vantage, runId, results) {
   let stored = 0;
   for (const r of results) {
     if (isIr) {
-      statements.push(env.DB.prepare(SQL_IR).bind(
-        r.id, r.uri, r.proto, r.host, r.port, r.sni, r.tag, now, now, now, r.ok, r.latency, r.score,
-      ));
+      statements.push(r.ok
+        ? env.DB.prepare(SQL_IR).bind(
+            r.id, r.uri, r.proto, r.host, r.port, r.sni, r.tag, now, now, now, 1, r.latency, r.score,
+          )
+        : env.DB.prepare(SQL_IR_DEAD).bind(now, now, r.id));
     } else {
-      statements.push(env.DB.prepare(SQL_GLOBAL).bind(
-        r.id, r.uri, r.proto, r.host, r.port, r.sni, r.tag,
-        now, now, r.ok ? now : null, r.latency,
-        r.ok ? 1 : 0, r.ok ? 0 : 1, r.ok, r.score,
-      ));
+      statements.push(r.ok
+        ? env.DB.prepare(SQL_GLOBAL).bind(
+            r.id, r.uri, r.proto, r.host, r.port, r.sni, r.tag,
+            now, now, now, r.latency, 1, 0, 1, r.score,
+          )
+        : env.DB.prepare(SQL_GLOBAL_DEAD).bind(now, r.id));
     }
-    statements.push(env.DB.prepare(SQL_ATTEMPT).bind(
-      r.id, vantage, runId, now, r.ok, r.okCount, r.tries, r.latency, r.err,
-    ));
     stored++;
   }
   for (let i = 0; i < statements.length; i += CHUNK) {
@@ -132,10 +137,11 @@ export async function claimIr(env, limit) {
     .all();
   const items = rows.results || [];
   if (!items.length) return [];
-  // Stamp the claim so the same configs do not come back for 6 hours.
-  const stamp = nowSec();
-  const batch = items.map((row) => env.DB.prepare("UPDATE configs SET claimed_ir_at = ? WHERE id = ?").bind(stamp, row.id));
-  for (let i = 0; i < batch.length; i += CHUNK) await env.DB.batch(batch.slice(i, i + CHUNK));
+  // Stamp the claim so the same configs do not come back for 6 hours. One statement
+  // instead of one per row: same row count, a fraction of the request/CPU budget.
+  await env.DB.prepare("UPDATE configs SET claimed_ir_at = ? WHERE id IN (" + items.map(() => "?").join(",") + ")")
+    .bind(nowSec(), ...items.map((row) => row.id))
+    .run();
   return items;
 }
 
@@ -214,11 +220,20 @@ export async function health(env) {
 }
 
 export async function prune(env) {
-  const cutoff = nowSec() - 7 * 86400;
-  await env.DB.prepare("DELETE FROM attempts WHERE ts < ?").bind(cutoff).run();
-  await env.DB.prepare("DELETE FROM runs WHERE ts < ?").bind(cutoff).run();
-  await env.DB.prepare("DELETE FROM configs WHERE works_global = 0 AND works_ir = 0 AND fail_streak >= 4 AND last_seen < ?")
-    .bind(nowSec() - 3 * 86400)
-    .run();
-  await setMeta(env, "last_prune", String(nowSec()));
+  const now = nowSec();
+  await env.DB.prepare("DELETE FROM runs WHERE ts < ?").bind(now - 7 * 86400).run();
+  // configs only ever holds configs that worked at least once, so a row that has been
+  // dead for two hours is garbage. Keeping it would not cost a write by itself, but it
+  // would grow the table every later upsert has to index.
+  //
+  // Bounded on purpose: a DELETE is charged one written row per deleted row (plus its
+  // index entries), so an unbounded sweep after a policy change could spend a whole
+  // day's budget in one cron tick. 400 an hour drains any backlog within a day and
+  // keeps up with normal churn (~60 retired survivors an hour) afterwards.
+  await env.DB.prepare(
+    "DELETE FROM configs WHERE id IN (" +
+      "SELECT id FROM configs WHERE works_global = 0 AND works_ir = 0 AND last_seen < ? LIMIT 400" +
+    ")",
+  ).bind(now - 2 * 3600).run();
+  await setMeta(env, "last_prune", String(now));
 }

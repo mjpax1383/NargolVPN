@@ -33,6 +33,17 @@ jobs:
           path: tester/bin
           key: xray-core-${{ runner.os }}-v1
 
+      # The seen-cache is the only reason a config that already failed is not probed
+      # again. Keeping it between runs costs nothing and saves both probe slots and the
+      # D1 rows we would otherwise spend on a "do not retest" tombstone row.
+      - name: Restore seen-cache
+        uses: actions/cache@v4
+        with:
+          path: tester/state
+          key: seen-${{ github.run_id }}
+          restore-keys: |
+            seen-
+
       - name: Offline selftest
         working-directory: tester
         run: python agent.py selftest

@@ -297,14 +297,16 @@ async function apiProbe(env, url) {
 
 async function tick(env) {
   const now = nowSec();
+  // Housekeeping first: a slow or failing dispatch must not be able to starve the prune
+  // (and an un-pruned table makes every later upsert more expensive).
+  const lastPrune = Number(await getMeta(env, "last_prune", "0")) || 0;
+  if (now - lastPrune >= 3600) await prune(env);
   const lastDispatch = Number(await getMeta(env, "last_dispatch", "0")) || 0;
   const interval = Number(env.DISPATCH_INTERVAL_MIN || 55) * 60;
   if (now - lastDispatch >= interval) {
     const result = await dispatchWorkflow(env);
     if (result.ok) await setMeta(env, "last_dispatch", String(now));
   }
-  const lastPrune = Number(await getMeta(env, "last_prune", "0")) || 0;
-  if (now - lastPrune >= 3600) await prune(env);
 }
 
 function landing(env, url) {
