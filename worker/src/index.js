@@ -300,7 +300,10 @@ async function tick(env) {
   // Housekeeping first: a slow or failing dispatch must not be able to starve the prune
   // (and an un-pruned table makes every later upsert more expensive).
   const lastPrune = Number(await getMeta(env, "last_prune", "0")) || 0;
-  if (now - lastPrune >= 3600) await prune(env);
+  if (now - lastPrune >= 3600) {
+    // Never let housekeeping take the hourly dispatch down with it.
+    try { await prune(env); } catch (err) { /* try again next tick */ }
+  }
   const lastDispatch = Number(await getMeta(env, "last_dispatch", "0")) || 0;
   const interval = Number(env.DISPATCH_INTERVAL_MIN || 55) * 60;
   if (now - lastDispatch >= interval) {
