@@ -1,6 +1,6 @@
 # Subscription mirrors
 
-Updated: 2026-11-28T01:02:02.000Z
+Updated: 2026-11-28T02:01:59.000Z
 
 - all (200 configs): https://vpnbot.iamstarboy83.workers.dev/sub/all
 - all1 (50 configs): https://vpnbot.iamstarboy83.workers.dev/sub/all1
